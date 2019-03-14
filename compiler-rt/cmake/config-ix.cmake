@@ -7,7 +7,7 @@ include(TestBigEndian)
 
 function(check_linker_flag flag out_var)
   cmake_push_check_state()
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} ${flag}")
+  set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -Werror ${flag}")
   check_cxx_compiler_flag("" ${out_var})
   cmake_pop_check_state()
 endfunction()
