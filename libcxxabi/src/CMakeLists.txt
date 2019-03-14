@@ -185,7 +185,7 @@ endif()
 
 # Build the shared library.
 if (LIBCXXABI_ENABLE_SHARED)
-  add_library(cxxabi_shared SHARED ${cxxabi_shared_sources})
+  add_library(cxxabi_shared SHARED ${cxxabi_shared_sources} "cxxabi_placeholder.cpp")
   if(COMMAND llvm_setup_rpath)
     llvm_setup_rpath(cxxabi_shared)
   endif()
