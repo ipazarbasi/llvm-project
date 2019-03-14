@@ -174,6 +174,7 @@ if(APPLE)
                 RTSanitizerCommonSymbolizer
                 RTLSanCommon
                 RTUbsan
+    SOURCES asan_placeholder.cc
     CFLAGS ${ASAN_DYNAMIC_CFLAGS}
     LINK_FLAGS ${WEAK_SYMBOL_LINK_FLAGS}
     DEFS ${ASAN_DYNAMIC_DEFINITIONS}

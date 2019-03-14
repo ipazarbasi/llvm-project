@@ -98,6 +98,7 @@ if(APPLE)
                   RTSanitizerCommonCoverage
                   RTSanitizerCommonSymbolizer
                   RTInterception
+      SOURCES ubsan_placeholder.cc
       LINK_FLAGS ${WEAK_SYMBOL_LINK_FLAGS}
       PARENT_TARGET ubsan)
 
