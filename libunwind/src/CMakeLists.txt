@@ -17,9 +17,15 @@ set_source_files_properties(${LIBUNWIND_C_SOURCES}
 set(LIBUNWIND_ASM_SOURCES
     UnwindRegistersRestore.S
     UnwindRegistersSave.S)
-set_source_files_properties(${LIBUNWIND_ASM_SOURCES}
-                            PROPERTIES
-                              LANGUAGE C)
+if(CMAKE_GENERATOR STREQUAL Xcode)
+    set_source_files_properties(${LIBUNWIND_ASM_SOURCES}
+                                PROPERTIES
+                                LANGUAGE ASM)
+else()
+    set_source_files_properties(${LIBUNWIND_ASM_SOURCES}
+                                PROPERTIES
+                                LANGUAGE C)
+endif()
 
 set(LIBUNWIND_HEADERS
     AddressSpace.hpp
