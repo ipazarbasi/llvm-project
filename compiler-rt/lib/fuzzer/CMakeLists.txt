@@ -105,6 +105,7 @@ add_compiler_rt_runtime(clang_rt.fuzzer
   ARCHS ${FUZZER_SUPPORTED_ARCH}
   OBJECT_LIBS RTfuzzer RTfuzzer_main
   CFLAGS ${LIBFUZZER_CFLAGS}
+  SOURCES fuzzer_placeholder.cc
   PARENT_TARGET fuzzer)
 
 add_compiler_rt_runtime(clang_rt.fuzzer_no_main
@@ -113,6 +114,7 @@ add_compiler_rt_runtime(clang_rt.fuzzer_no_main
   ARCHS ${FUZZER_SUPPORTED_ARCH}
   OBJECT_LIBS RTfuzzer
   CFLAGS ${LIBFUZZER_CFLAGS}
+  SOURCES fuzzer_placeholder.cc
   PARENT_TARGET fuzzer)
 
 if(OS_NAME MATCHES "Linux|Fuchsia" AND

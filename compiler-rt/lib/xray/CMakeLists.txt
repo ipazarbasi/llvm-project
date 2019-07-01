@@ -205,6 +205,7 @@ if (APPLE)
     DEFS ${XRAY_COMMON_DEFINITIONS}
     LINK_FLAGS ${SANITIZER_COMMON_LINK_FLAGS} ${WEAK_SYMBOL_LINK_FLAGS}
     LINK_LIBS ${XRAY_LINK_LIBS}
+    SOURCES xray_placeholder.cc
     PARENT_TARGET xray)
   add_compiler_rt_runtime(clang_rt.xray-fdr
     STATIC
@@ -215,6 +216,7 @@ if (APPLE)
     DEFS ${XRAY_COMMON_DEFINITIONS}
     LINK_FLAGS ${SANITIZER_COMMON_LINK_FLAGS} ${WEAK_SYMBOL_LINK_FLAGS}
     LINK_LIBS ${XRAY_LINK_LIBS}
+    SOURCES xray_placeholder.cc
     PARENT_TARGET xray)
   add_compiler_rt_runtime(clang_rt.xray-basic
     STATIC
@@ -225,6 +227,7 @@ if (APPLE)
     DEFS ${XRAY_COMMON_DEFINITIONS}
     LINK_FLAGS ${SANITIZER_COMMON_LINK_FLAGS} ${WEAK_SYMBOL_LINK_FLAGS}
     LINK_LIBS ${XRAY_LINK_LIBS}
+    SOURCES xray_placeholder.cc
     PARENT_TARGET xray)
   add_compiler_rt_runtime(clang_rt.xray-profiling
     STATIC
@@ -235,6 +238,7 @@ if (APPLE)
     DEFS ${XRAY_COMMON_DEFINITIONS}
     LINK_FLAGS ${SANITIZER_COMMON_LINK_FLAGS} ${WEAK_SYMBOL_LINK_FLAGS}
     LINK_LIBS ${XRAY_LINK_LIBS}
+    SOURCES xray_placeholder.cc
     PARENT_TARGET xray)
 else() # not Apple
   foreach(arch ${XRAY_SUPPORTED_ARCH})

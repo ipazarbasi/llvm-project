@@ -30,6 +30,7 @@ if(COMPILER_RT_HAS_UBSAN_MINIMAL)
     ARCHS ${UBSAN_SUPPORTED_ARCH}
     OBJECT_LIBS RTUbsan_minimal
     CFLAGS ${UBSAN_CFLAGS}
+    SOURCES ubsan_minimal_placeholder.cc
     PARENT_TARGET ubsan-minimal)
 
   add_compiler_rt_runtime(clang_rt.ubsan_minimal
