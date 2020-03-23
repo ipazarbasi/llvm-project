@@ -10,9 +10,11 @@
 #include "../ClangTidyModule.h"
 #include "../ClangTidyModuleRegistry.h"
 #include "AvoidNSErrorInitCheck.h"
-#include "AvoidSpinlockCheck.h"
+#include "DeallocInCategoryCheck.h"
 #include "ForbiddenSubclassingCheck.h"
+#include "MissingHashCheck.h"
 #include "PropertyDeclarationCheck.h"
+#include "SuperSelfCheck.h"
 
 using namespace clang::ast_matchers;
 
@@ -25,12 +27,16 @@ public:
   void addCheckFactories(ClangTidyCheckFactories &CheckFactories) override {
     CheckFactories.registerCheck<AvoidNSErrorInitCheck>(
         "objc-avoid-nserror-init");
-    CheckFactories.registerCheck<AvoidSpinlockCheck>(
-        "objc-avoid-spinlock");
+    CheckFactories.registerCheck<DeallocInCategoryCheck>(
+        "objc-dealloc-in-category");
     CheckFactories.registerCheck<ForbiddenSubclassingCheck>(
         "objc-forbidden-subclassing");
+    CheckFactories.registerCheck<MissingHashCheck>(
+        "objc-missing-hash");
     CheckFactories.registerCheck<PropertyDeclarationCheck>(
         "objc-property-declaration");
+    CheckFactories.registerCheck<SuperSelfCheck>(
+        "objc-super-self");
   }
 };
 

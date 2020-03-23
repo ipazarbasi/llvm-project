@@ -9,7 +9,7 @@
 #ifndef LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MODERNIZE_USE_USING_H
 #define LLVM_CLANG_TOOLS_EXTRA_CLANG_TIDY_MODERNIZE_USE_USING_H
 
-#include "../ClangTidy.h"
+#include "../ClangTidyCheck.h"
 
 namespace clang {
 namespace tidy {
@@ -22,9 +22,16 @@ namespace modernize {
 class UseUsingCheck : public ClangTidyCheck {
 
   const bool IgnoreMacros;
+  SourceLocation LastReplacementEnd;
+  SourceRange LastTagDeclRange;
+  std::string FirstTypedefType;
+  std::string FirstTypedefName;
 
 public:
   UseUsingCheck(StringRef Name, ClangTidyContext *Context);
+  bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
+    return LangOpts.CPlusPlus11;
+  }
   void storeOptions(ClangTidyOptions::OptionMap &Opts) override {
     Options.store(Opts, "IgnoreMacros", IgnoreMacros);
   }

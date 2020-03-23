@@ -1,4 +1,4 @@
-//===-- UnwindAssembly-x86.cpp ----------------------------------*- C++ -*-===//
+//===-- UnwindAssembly-x86.cpp --------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -30,9 +30,9 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//-----------------------------------------------------------------------------------------------
+LLDB_PLUGIN_DEFINE_ADV(UnwindAssembly_x86, UnwindAssemblyX86)
+
 //  UnwindAssemblyParser_x86 method definitions
-//-----------------------------------------------------------------------------------------------
 
 UnwindAssembly_x86::UnwindAssembly_x86(const ArchSpec &arch)
     : lldb_private::UnwindAssembly(arch),
@@ -241,12 +241,10 @@ UnwindAssembly *UnwindAssembly_x86::CreateInstance(const ArchSpec &arch) {
   const llvm::Triple::ArchType cpu = arch.GetMachine();
   if (cpu == llvm::Triple::x86 || cpu == llvm::Triple::x86_64)
     return new UnwindAssembly_x86(arch);
-  return NULL;
+  return nullptr;
 }
 
-//------------------------------------------------------------------
 // PluginInterface protocol in UnwindAssemblyParser_x86
-//------------------------------------------------------------------
 
 ConstString UnwindAssembly_x86::GetPluginName() {
   return GetPluginNameStatic();

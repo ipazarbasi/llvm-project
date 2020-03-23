@@ -1,4 +1,4 @@
-//===-- UriParser.cpp -------------------------------------------*- C++ -*-===//
+//===-- UriParser.cpp -----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -15,9 +15,7 @@
 
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // UriParser::Parse
-//----------------------------------------------------------------------
 bool UriParser::Parse(llvm::StringRef uri, llvm::StringRef &scheme,
                       llvm::StringRef &hostname, int &port,
                       llvm::StringRef &path) {

@@ -33,6 +33,10 @@ LLVMContext &BasicBlock::getContext() const {
   return getType()->getContext();
 }
 
+template <> void llvm::invalidateParentIListOrdering(BasicBlock *BB) {
+  BB->invalidateOrders();
+}
+
 // Explicit instantiation of SymbolTableListTraits since some of the methods
 // are not in the public header file...
 template class llvm::SymbolTableListTraits<Instruction>;
@@ -61,6 +65,8 @@ void BasicBlock::insertInto(Function *NewParent, BasicBlock *InsertBefore) {
 }
 
 BasicBlock::~BasicBlock() {
+  validateInstrOrdering();
+
   // If the address of the block is taken and it is being deleted (e.g. because
   // it is dead), this means that there is either a dangling constant expr
   // hanging off the block, or an undefined use of the block (source code
@@ -105,6 +111,13 @@ BasicBlock::instructionsWithoutDebug() {
     return !isa<DbgInfoIntrinsic>(I);
   };
   return make_filter_range(*this, Fn);
+}
+
+filter_iterator<BasicBlock::const_iterator,
+                std::function<bool(const Instruction &)>>::difference_type
+BasicBlock::sizeWithoutDebug() const {
+  return std::distance(instructionsWithoutDebug().begin(),
+                       instructionsWithoutDebug().end());
 }
 
 void BasicBlock::removeFromParent() {
@@ -184,6 +197,18 @@ const CallInst *BasicBlock::getTerminatingDeoptimizeCall() const {
         return CI;
 
   return nullptr;
+}
+
+const CallInst *BasicBlock::getPostdominatingDeoptimizeCall() const {
+  const BasicBlock* BB = this;
+  SmallPtrSet<const BasicBlock *, 8> Visited;
+  Visited.insert(BB);
+  while (auto *Succ = BB->getUniqueSuccessor()) {
+    if (!Visited.insert(Succ).second)
+      return nullptr;
+    BB = Succ;
+  }
+  return BB->getTerminatingDeoptimizeCall();
 }
 
 const Instruction* BasicBlock::getFirstNonPHI() const {
@@ -425,41 +450,37 @@ BasicBlock *BasicBlock::splitBasicBlock(iterator I, const Twine &BBName) {
   // Now we must loop through all of the successors of the New block (which
   // _were_ the successors of the 'this' block), and update any PHI nodes in
   // successors.  If there were PHI nodes in the successors, then they need to
-  // know that incoming branches will be from New, not from Old.
+  // know that incoming branches will be from New, not from Old (this).
   //
-  for (succ_iterator I = succ_begin(New), E = succ_end(New); I != E; ++I) {
-    // Loop over any phi nodes in the basic block, updating the BB field of
-    // incoming values...
-    BasicBlock *Successor = *I;
-    for (auto &PN : Successor->phis()) {
-      int Idx = PN.getBasicBlockIndex(this);
-      while (Idx != -1) {
-        PN.setIncomingBlock((unsigned)Idx, New);
-        Idx = PN.getBasicBlockIndex(this);
-      }
-    }
-  }
+  New->replaceSuccessorsPhiUsesWith(this, New);
   return New;
 }
 
-void BasicBlock::replaceSuccessorsPhiUsesWith(BasicBlock *New) {
+void BasicBlock::replacePhiUsesWith(BasicBlock *Old, BasicBlock *New) {
+  // N.B. This might not be a complete BasicBlock, so don't assume
+  // that it ends with a non-phi instruction.
+  for (iterator II = begin(), IE = end(); II != IE; ++II) {
+    PHINode *PN = dyn_cast<PHINode>(II);
+    if (!PN)
+      break;
+    PN->replaceIncomingBlockWith(Old, New);
+  }
+}
+
+void BasicBlock::replaceSuccessorsPhiUsesWith(BasicBlock *Old,
+                                              BasicBlock *New) {
   Instruction *TI = getTerminator();
   if (!TI)
     // Cope with being called on a BasicBlock that doesn't have a terminator
     // yet. Clang's CodeGenFunction::EmitReturnBlock() likes to do this.
     return;
-  for (BasicBlock *Succ : successors(TI)) {
-    // N.B. Succ might not be a complete BasicBlock, so don't assume
-    // that it ends with a non-phi instruction.
-    for (iterator II = Succ->begin(), IE = Succ->end(); II != IE; ++II) {
-      PHINode *PN = dyn_cast<PHINode>(II);
-      if (!PN)
-        break;
-      int i;
-      while ((i = PN->getBasicBlockIndex(this)) >= 0)
-        PN->setIncomingBlock(i, New);
-    }
-  }
+  llvm::for_each(successors(TI), [Old, New](BasicBlock *Succ) {
+    Succ->replacePhiUsesWith(Old, New);
+  });
+}
+
+void BasicBlock::replaceSuccessorsPhiUsesWith(BasicBlock *New) {
+  this->replaceSuccessorsPhiUsesWith(this, New);
 }
 
 /// Return true if this basic block is a landing pad. I.e., it's
@@ -491,3 +512,29 @@ BasicBlock::iterator llvm::skipDebugIntrinsics(BasicBlock::iterator It) {
     ++It;
   return It;
 }
+
+void BasicBlock::renumberInstructions() {
+  unsigned Order = 0;
+  for (Instruction &I : *this)
+    I.Order = Order++;
+
+  // Set the bit to indicate that the instruction order valid and cached.
+  BasicBlockBits Bits = getBasicBlockBits();
+  Bits.InstrOrderValid = true;
+  setBasicBlockBits(Bits);
+}
+
+#ifndef NDEBUG
+/// In asserts builds, this checks the numbering. In non-asserts builds, it
+/// is defined as a no-op inline function in BasicBlock.h.
+void BasicBlock::validateInstrOrdering() const {
+  if (!isInstrOrderValid())
+    return;
+  const Instruction *Prev = nullptr;
+  for (const Instruction &I : *this) {
+    assert((!Prev || Prev->comesBefore(&I)) &&
+           "cached instruction ordering is incorrect");
+    Prev = &I;
+  }
+}
+#endif

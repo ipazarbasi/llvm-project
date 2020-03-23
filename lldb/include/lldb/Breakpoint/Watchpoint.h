@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_Watchpoint_h_
-#define liblldb_Watchpoint_h_
+#ifndef LLDB_BREAKPOINT_WATCHPOINT_H
+#define LLDB_BREAKPOINT_WATCHPOINT_H
 
 #include <memory>
 #include <string>
@@ -69,7 +69,6 @@ public:
   // This doesn't really enable/disable the watchpoint.   It is currently just
   // for use in the Process plugin's {Enable,Disable}Watchpoint, which should
   // be used instead.
-  
   void SetEnabled(bool enabled, bool notify = true);
 
   bool IsHardware() const override;
@@ -97,15 +96,12 @@ public:
   Target &GetTarget() { return m_target; }
   const Status &GetError() { return m_error; }
 
-  //------------------------------------------------------------------
   /// Returns the WatchpointOptions structure set for this watchpoint.
   ///
   /// \return
   ///     A pointer to this watchpoint's WatchpointOptions.
-  //------------------------------------------------------------------
   WatchpointOptions *GetOptions() { return &m_options; }
 
-  //------------------------------------------------------------------
   /// Set the callback action invoked when the watchpoint is hit.
   ///
   /// \param[in] callback
@@ -116,11 +112,6 @@ public:
   ///    If \b true the callback will be run on the private event thread
   ///    before the stop event gets reported.  If false, the callback will get
   ///    handled on the public event thread after the stop has been posted.
-  ///
-  /// \return
-  ///    \b true if the process should stop when you hit the watchpoint.
-  ///    \b false if it should continue.
-  //------------------------------------------------------------------
   void SetCallback(WatchpointHitCallback callback, void *callback_baton,
                    bool is_synchronous = false);
 
@@ -130,7 +121,6 @@ public:
 
   void ClearCallback();
 
-  //------------------------------------------------------------------
   /// Invoke the callback action when the watchpoint is hit.
   ///
   /// \param[in] context
@@ -138,28 +128,21 @@ public:
   ///
   /// \return
   ///     \b true if the target should stop at this watchpoint and \b false not.
-  //------------------------------------------------------------------
   bool InvokeCallback(StoppointCallbackContext *context);
 
-  //------------------------------------------------------------------
   // Condition
-  //------------------------------------------------------------------
-  //------------------------------------------------------------------
   /// Set the watchpoint's condition.
   ///
   /// \param[in] condition
   ///    The condition expression to evaluate when the watchpoint is hit.
   ///    Pass in nullptr to clear the condition.
-  //------------------------------------------------------------------
   void SetCondition(const char *condition);
 
-  //------------------------------------------------------------------
   /// Return a pointer to the text of the condition expression.
   ///
   /// \return
   ///    A pointer to the condition expression text, or nullptr if no
   //     condition has been set.
-  //------------------------------------------------------------------
   const char *GetConditionText() const;
 
   void TurnOnEphemeralMode();
@@ -177,8 +160,8 @@ private:
   void ResetHitCount() { m_hit_count = 0; }
 
   void ResetHistoricValues() {
-    m_old_value_sp.reset(nullptr);
-    m_new_value_sp.reset(nullptr);
+    m_old_value_sp.reset();
+    m_new_value_sp.reset();
   }
 
   Target &m_target;
@@ -226,4 +209,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_Watchpoint_h_
+#endif // LLDB_BREAKPOINT_WATCHPOINT_H

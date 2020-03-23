@@ -34,14 +34,53 @@ bool testBuildAttr(unsigned Tag, unsigned Value,
     reinterpret_cast<const uint8_t*>(OS.str().c_str()), OS.str().size());
 
   ARMAttributeParser Parser;
-  Parser.Parse(Bytes, true);
+  cantFail(Parser.parse(Bytes, support::little));
 
   return (Parser.hasAttribute(ExpectedTag) &&
     Parser.getAttributeValue(ExpectedTag) == ExpectedValue);
 }
 
+void testParseError(ArrayRef<uint8_t> bytes, const char *msg) {
+  ARMAttributeParser parser;
+  Error e = parser.parse(bytes, support::little);
+  EXPECT_STREQ(toString(std::move(e)).c_str(), msg);
+}
+
 bool testTagString(unsigned Tag, const char *name) {
   return ARMBuildAttrs::AttrTypeAsString(Tag).str() == name;
+}
+
+TEST(ARMAttributeParser, UnrecognizedFormatVersion) {
+  static const uint8_t bytes[] = {1};
+  testParseError(bytes, "unrecognized format-version: 0x1");
+}
+
+TEST(ARMAttributeParser, InvalidSubsectionLength) {
+  static const uint8_t bytes[] = {'A', 3, 0, 0, 0};
+  testParseError(bytes, "invalid subsection length 3 at offset 0x1");
+}
+
+TEST(ARMAttributeParser, UnrecognizedVendorName) {
+  static const uint8_t bytes[] = {'A', 7, 0, 0, 0, 'x', 'y', 0};
+  testParseError(bytes, "unrecognized vendor-name: xy");
+}
+
+TEST(ARMAttributeParser, InvalidAttributeSize) {
+  static const uint8_t bytes[] = {'A', 15,  0, 0, 0, 'a', 'e', 'a',
+                                  'b', 'i', 0, 4, 4, 0,   0,   0};
+  testParseError(bytes, "invalid attribute size 4 at offset 0xb");
+}
+
+TEST(ARMAttributeParser, UnrecognizedTag) {
+  static const uint8_t bytes[] = {'A', 15,  0, 0, 0, 'a', 'e', 'a',
+                                  'b', 'i', 0, 4, 5, 0,   0,   0};
+  testParseError(bytes, "unrecognized tag 0x4 at offset 0xb");
+}
+
+TEST(ARMAttributeParser, UnknownCPU_arch) {
+  static const uint8_t bytes[] = {'A', 15, 0, 0, 0, 'a', 'e', 'a', 'b',
+                                  'i', 0,  1, 7, 0, 0,   0,   6,   22};
+  testParseError(bytes, "unknown CPU_arch value: 22");
 }
 
 TEST(CPUArchBuildAttr, testBuildAttr) {
@@ -75,6 +114,16 @@ TEST(CPUArchBuildAttr, testBuildAttr) {
                                ARMBuildAttrs::v6S_M));
   EXPECT_TRUE(testBuildAttr(6, 13, ARMBuildAttrs::CPU_arch,
                                ARMBuildAttrs::v7E_M));
+  EXPECT_TRUE(testBuildAttr(6, 14, ARMBuildAttrs::CPU_arch,
+                               ARMBuildAttrs::v8_A));
+  EXPECT_TRUE(testBuildAttr(6, 15, ARMBuildAttrs::CPU_arch,
+                               ARMBuildAttrs::v8_R));
+  EXPECT_TRUE(testBuildAttr(6, 16, ARMBuildAttrs::CPU_arch,
+                               ARMBuildAttrs::v8_M_Base));
+  EXPECT_TRUE(testBuildAttr(6, 17, ARMBuildAttrs::CPU_arch,
+                               ARMBuildAttrs::v8_M_Main));
+  EXPECT_TRUE(testBuildAttr(6, 21, ARMBuildAttrs::CPU_arch,
+                               ARMBuildAttrs::v8_1_M_Main));
 }
 
 TEST(CPUArchProfileBuildAttr, testBuildAttr) {
@@ -157,6 +206,16 @@ TEST(FPHPBuildAttr, testBuildAttr) {
                             ARMBuildAttrs::Not_Allowed));
   EXPECT_TRUE(testBuildAttr(36, 1, ARMBuildAttrs::FP_HP_extension,
                             ARMBuildAttrs::AllowHPFP));
+}
+
+TEST(MVEBuildAttr, testBuildAttr) {
+  EXPECT_TRUE(testTagString(48, "Tag_MVE_arch"));
+  EXPECT_TRUE(testBuildAttr(48, 0, ARMBuildAttrs::MVE_arch,
+                            ARMBuildAttrs::Not_Allowed));
+  EXPECT_TRUE(testBuildAttr(48, 1, ARMBuildAttrs::MVE_arch,
+                            ARMBuildAttrs::AllowMVEInteger));
+  EXPECT_TRUE(testBuildAttr(48, 2, ARMBuildAttrs::MVE_arch,
+                            ARMBuildAttrs::AllowMVEIntegerAndFloat));
 }
 
 TEST(CPUAlignBuildAttr, testBuildAttr) {

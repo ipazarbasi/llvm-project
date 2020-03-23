@@ -14,8 +14,11 @@
 #include "Logger.h"
 #include "URI.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Index/IndexSymbol.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
@@ -35,7 +38,7 @@ URIForFile URIForFile::canonicalize(llvm::StringRef AbsPath,
     elog("URIForFile: failed to resolve path {0} with TU path {1}: "
          "{2}.\nUsing unresolved path.",
          AbsPath, TUPath, Resolved.takeError());
-    return URIForFile(AbsPath);
+    return URIForFile(std::string(AbsPath));
   }
   return URIForFile(std::move(*Resolved));
 }
@@ -85,6 +88,19 @@ llvm::json::Value toJSON(const TextDocumentIdentifier &R) {
 bool fromJSON(const llvm::json::Value &Params, TextDocumentIdentifier &R) {
   llvm::json::ObjectMapper O(Params);
   return O && O.map("uri", R.uri);
+}
+
+llvm::json::Value toJSON(const VersionedTextDocumentIdentifier &R) {
+  auto Result = toJSON(static_cast<const TextDocumentIdentifier &>(R));
+  Result.getAsObject()->try_emplace("version", R.version);
+  return Result;
+}
+
+bool fromJSON(const llvm::json::Value &Params,
+              VersionedTextDocumentIdentifier &R) {
+  llvm::json::ObjectMapper O(Params);
+  return fromJSON(Params, static_cast<TextDocumentIdentifier &>(R)) && O &&
+         O.map("version", R.version);
 }
 
 bool fromJSON(const llvm::json::Value &Params, Position &R) {
@@ -211,16 +227,83 @@ SymbolKind adjustKindToCapability(SymbolKind Kind,
   }
 }
 
+SymbolKind indexSymbolKindToSymbolKind(index::SymbolKind Kind) {
+  switch (Kind) {
+  case index::SymbolKind::Unknown:
+    return SymbolKind::Variable;
+  case index::SymbolKind::Module:
+    return SymbolKind::Module;
+  case index::SymbolKind::Namespace:
+    return SymbolKind::Namespace;
+  case index::SymbolKind::NamespaceAlias:
+    return SymbolKind::Namespace;
+  case index::SymbolKind::Macro:
+    return SymbolKind::String;
+  case index::SymbolKind::Enum:
+    return SymbolKind::Enum;
+  case index::SymbolKind::Struct:
+    return SymbolKind::Struct;
+  case index::SymbolKind::Class:
+    return SymbolKind::Class;
+  case index::SymbolKind::Protocol:
+    return SymbolKind::Interface;
+  case index::SymbolKind::Extension:
+    return SymbolKind::Interface;
+  case index::SymbolKind::Union:
+    return SymbolKind::Class;
+  case index::SymbolKind::TypeAlias:
+    return SymbolKind::Class;
+  case index::SymbolKind::Function:
+    return SymbolKind::Function;
+  case index::SymbolKind::Variable:
+    return SymbolKind::Variable;
+  case index::SymbolKind::Field:
+    return SymbolKind::Field;
+  case index::SymbolKind::EnumConstant:
+    return SymbolKind::EnumMember;
+  case index::SymbolKind::InstanceMethod:
+  case index::SymbolKind::ClassMethod:
+  case index::SymbolKind::StaticMethod:
+    return SymbolKind::Method;
+  case index::SymbolKind::InstanceProperty:
+  case index::SymbolKind::ClassProperty:
+  case index::SymbolKind::StaticProperty:
+    return SymbolKind::Property;
+  case index::SymbolKind::Constructor:
+  case index::SymbolKind::Destructor:
+    return SymbolKind::Constructor;
+  case index::SymbolKind::ConversionFunction:
+    return SymbolKind::Function;
+  case index::SymbolKind::Parameter:
+  case index::SymbolKind::NonTypeTemplateParm:
+    return SymbolKind::Variable;
+  case index::SymbolKind::Using:
+    return SymbolKind::Namespace;
+  case index::SymbolKind::TemplateTemplateParm:
+  case index::SymbolKind::TemplateTypeParm:
+    return SymbolKind::TypeParameter;
+  }
+  llvm_unreachable("invalid symbol kind");
+}
+
 bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
   const llvm::json::Object *O = Params.getAsObject();
   if (!O)
     return false;
   if (auto *TextDocument = O->getObject("textDocument")) {
+    if (auto *SemanticHighlighting =
+            TextDocument->getObject("semanticHighlightingCapabilities")) {
+      if (auto SemanticHighlightingSupport =
+              SemanticHighlighting->getBoolean("semanticHighlighting"))
+        R.SemanticHighlighting = *SemanticHighlightingSupport;
+    }
     if (auto *Diagnostics = TextDocument->getObject("publishDiagnostics")) {
       if (auto CategorySupport = Diagnostics->getBoolean("categorySupport"))
         R.DiagnosticCategory = *CategorySupport;
       if (auto CodeActions = Diagnostics->getBoolean("codeActionsInline"))
         R.DiagnosticFixes = *CodeActions;
+      if (auto RelatedInfo = Diagnostics->getBoolean("relatedInformation"))
+        R.DiagnosticRelatedInformation = *RelatedInfo;
     }
     if (auto *Completion = TextDocument->getObject("completion")) {
       if (auto *Item = Completion->getObject("completionItem")) {
@@ -234,6 +317,8 @@ bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
             return false;
         }
       }
+      if (auto EditsNearCursor = Completion->getBoolean("editsNearCursor"))
+        R.CompletionFixes = *EditsNearCursor;
     }
     if (auto *CodeAction = TextDocument->getObject("codeAction")) {
       if (CodeAction->getObject("codeActionLiteralSupport"))
@@ -243,6 +328,30 @@ bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
       if (auto HierarchicalSupport =
               DocumentSymbol->getBoolean("hierarchicalDocumentSymbolSupport"))
         R.HierarchicalDocumentSymbol = *HierarchicalSupport;
+    }
+    if (auto *Hover = TextDocument->getObject("hover")) {
+      if (auto *ContentFormat = Hover->getArray("contentFormat")) {
+        for (const auto &Format : *ContentFormat) {
+          MarkupKind K = MarkupKind::PlainText;
+          if (fromJSON(Format, K)) {
+            R.HoverContentFormat = K;
+            break;
+          }
+        }
+      }
+    }
+    if (auto *Help = TextDocument->getObject("signatureHelp")) {
+      R.HasSignatureHelp = true;
+      if (auto *Info = Help->getObject("signatureInformation")) {
+        if (auto *Parameter = Info->getObject("parameterInformation")) {
+          if (auto OffsetSupport = Parameter->getBoolean("labelOffsetSupport"))
+            R.OffsetsInSignatureHelp = *OffsetSupport;
+        }
+      }
+    }
+    if (auto *Rename = TextDocument->getObject("rename")) {
+      if (auto RenameSupport = Rename->getBoolean("prepareSupport"))
+        R.RenamePrepareSupport = *RenameSupport;
     }
   }
   if (auto *Workspace = O->getObject("workspace")) {
@@ -255,6 +364,17 @@ bool fromJSON(const llvm::json::Value &Params, ClientCapabilities &R) {
         }
       }
     }
+  }
+  if (auto *Window = O->getObject("window")) {
+    if (auto WorkDoneProgress = Window->getBoolean("workDoneProgress"))
+      R.WorkDoneProgress = *WorkDoneProgress;
+    if (auto Implicit = Window->getBoolean("implicitWorkDoneProgressCreate"))
+      R.ImplicitProgressCreation = *Implicit;
+  }
+  if (auto *OffsetEncoding = O->get("offsetEncoding")) {
+    R.offsetEncoding.emplace();
+    if (!fromJSON(*OffsetEncoding, *R.offsetEncoding))
+      return false;
   }
   return true;
 }
@@ -274,6 +394,52 @@ bool fromJSON(const llvm::json::Value &Params, InitializeParams &R) {
   return true;
 }
 
+llvm::json::Value toJSON(const WorkDoneProgressCreateParams &P) {
+  return llvm::json::Object{{"token", P.token}};
+}
+
+llvm::json::Value toJSON(const WorkDoneProgressBegin &P) {
+  llvm::json::Object Result{
+      {"kind", "begin"},
+      {"title", P.title},
+  };
+  if (P.cancellable)
+    Result["cancellable"] = true;
+  if (P.percentage)
+    Result["percentage"] = 0;
+
+  // FIXME: workaround for older gcc/clang
+  return std::move(Result);
+}
+
+llvm::json::Value toJSON(const WorkDoneProgressReport &P) {
+  llvm::json::Object Result{{"kind", "report"}};
+  if (P.cancellable)
+    Result["cancellable"] = *P.cancellable;
+  if (P.message)
+    Result["message"] = *P.message;
+  if (P.percentage)
+    Result["percentage"] = *P.percentage;
+  // FIXME: workaround for older gcc/clang
+  return std::move(Result);
+}
+
+llvm::json::Value toJSON(const WorkDoneProgressEnd &P) {
+  llvm::json::Object Result{{"kind", "end"}};
+  if (P.message)
+    Result["message"] = *P.message;
+  // FIXME: workaround for older gcc/clang
+  return std::move(Result);
+}
+
+llvm::json::Value toJSON(const MessageType &R) {
+  return static_cast<int64_t>(R);
+}
+
+llvm::json::Value toJSON(const ShowMessageParams &R) {
+  return llvm::json::Object{{"type", R.type}, {"message", R.message}};
+}
+
 bool fromJSON(const llvm::json::Value &Params, DidOpenTextDocumentParams &R) {
   llvm::json::ObjectMapper O(Params);
   return O && O.map("textDocument", R.textDocument);
@@ -286,7 +452,10 @@ bool fromJSON(const llvm::json::Value &Params, DidCloseTextDocumentParams &R) {
 
 bool fromJSON(const llvm::json::Value &Params, DidChangeTextDocumentParams &R) {
   llvm::json::ObjectMapper O(Params);
-  return O && O.map("textDocument", R.textDocument) &&
+  if (!O)
+    return false;
+  O.map("forceRebuild", R.forceRebuild);  // Optional clangd extension.
+  return O.map("textDocument", R.textDocument) &&
          O.map("contentChanges", R.contentChanges) &&
          O.map("wantDiagnostics", R.wantDiagnostics);
 }
@@ -319,43 +488,34 @@ bool fromJSON(const llvm::json::Value &Params,
          O.map("text", R.text);
 }
 
-bool fromJSON(const llvm::json::Value &Params, FormattingOptions &R) {
-  llvm::json::ObjectMapper O(Params);
-  return O && O.map("tabSize", R.tabSize) &&
-         O.map("insertSpaces", R.insertSpaces);
-}
-
-llvm::json::Value toJSON(const FormattingOptions &P) {
-  return llvm::json::Object{
-      {"tabSize", P.tabSize},
-      {"insertSpaces", P.insertSpaces},
-  };
-}
-
 bool fromJSON(const llvm::json::Value &Params,
               DocumentRangeFormattingParams &R) {
   llvm::json::ObjectMapper O(Params);
-  return O && O.map("textDocument", R.textDocument) &&
-         O.map("range", R.range) && O.map("options", R.options);
+  return O && O.map("textDocument", R.textDocument) && O.map("range", R.range);
 }
 
 bool fromJSON(const llvm::json::Value &Params,
               DocumentOnTypeFormattingParams &R) {
   llvm::json::ObjectMapper O(Params);
   return O && O.map("textDocument", R.textDocument) &&
-         O.map("position", R.position) && O.map("ch", R.ch) &&
-         O.map("options", R.options);
+         O.map("position", R.position) && O.map("ch", R.ch);
 }
 
 bool fromJSON(const llvm::json::Value &Params, DocumentFormattingParams &R) {
   llvm::json::ObjectMapper O(Params);
-  return O && O.map("textDocument", R.textDocument) &&
-         O.map("options", R.options);
+  return O && O.map("textDocument", R.textDocument);
 }
 
 bool fromJSON(const llvm::json::Value &Params, DocumentSymbolParams &R) {
   llvm::json::ObjectMapper O(Params);
   return O && O.map("textDocument", R.textDocument);
+}
+
+llvm::json::Value toJSON(const DiagnosticRelatedInformation &DRI) {
+  return llvm::json::Object{
+      {"location", DRI.location},
+      {"message", DRI.message},
+  };
 }
 
 llvm::json::Value toJSON(const Diagnostic &D) {
@@ -368,6 +528,13 @@ llvm::json::Value toJSON(const Diagnostic &D) {
     Diag["category"] = *D.category;
   if (D.codeActions)
     Diag["codeActions"] = D.codeActions;
+  if (!D.code.empty())
+    Diag["code"] = D.code;
+  if (!D.source.empty())
+    Diag["source"] = D.source;
+  if (D.relatedInformation)
+    Diag["relatedInformation"] = *D.relatedInformation;
+  // FIXME: workaround for older gcc/clang
   return std::move(Diag);
 }
 
@@ -377,7 +544,17 @@ bool fromJSON(const llvm::json::Value &Params, Diagnostic &R) {
     return false;
   O.map("severity", R.severity);
   O.map("category", R.category);
+  O.map("code", R.code);
+  O.map("source", R.source);
   return true;
+}
+
+llvm::json::Value toJSON(const PublishDiagnosticsParams &PDP) {
+  return llvm::json::Object{
+      {"uri", PDP.uri},
+      {"diagnostics", PDP.diagnostics},
+      {"version", PDP.version},
+  };
 }
 
 bool fromJSON(const llvm::json::Value &Params, CodeActionContext &R) {
@@ -476,8 +653,8 @@ llvm::json::Value toJSON(const SymbolDetails &P) {
   if (P.ID.hasValue())
     Result["id"] = P.ID.getValue().str();
 
-  // Older clang cannot compile 'return Result', even though it is legal.
-  return llvm::json::Value(std::move(Result));
+  // FIXME: workaround for older gcc/clang
+  return std::move(Result);
 }
 
 llvm::raw_ostream &operator<<(llvm::raw_ostream &O, const SymbolDetails &S) {
@@ -508,6 +685,7 @@ llvm::json::Value toJSON(const Command &C) {
 
 const llvm::StringLiteral CodeAction::QUICKFIX_KIND = "quickfix";
 const llvm::StringLiteral CodeAction::REFACTOR_KIND = "refactor";
+const llvm::StringLiteral CodeAction::INFO_KIND = "info";
 
 llvm::json::Value toJSON(const CodeAction &CA) {
   auto CodeAction = llvm::json::Object{{"title", CA.title}};
@@ -538,8 +716,8 @@ llvm::json::Value toJSON(const DocumentSymbol &S) {
     Result["children"] = S.children;
   if (S.deprecated)
     Result["deprecated"] = true;
-  // Older gcc cannot compile 'return Result', even though it is legal.
-  return llvm::json::Value(std::move(Result));
+  // FIXME: workaround for older gcc/clang
+  return std::move(Result);
 }
 
 llvm::json::Value toJSON(const WorkspaceEdit &WE) {
@@ -564,6 +742,15 @@ llvm::json::Value toJSON(const TweakArgs &A) {
 
 llvm::json::Value toJSON(const ApplyWorkspaceEditParams &Params) {
   return llvm::json::Object{{"edit", Params.edit}};
+}
+
+bool fromJSON(const llvm::json::Value &Response,
+              ApplyWorkspaceEditResponse &R) {
+  llvm::json::ObjectMapper O(Response);
+  if (!O || !O.map("applied", R.applied))
+    return false;
+  O.map("failureReason", R.failureReason);
+  return true;
 }
 
 bool fromJSON(const llvm::json::Value &Params, TextDocumentPositionParams &R) {
@@ -603,6 +790,27 @@ static llvm::StringRef toTextKind(MarkupKind Kind) {
     return "markdown";
   }
   llvm_unreachable("Invalid MarkupKind");
+}
+
+bool fromJSON(const llvm::json::Value &V, MarkupKind &K) {
+  auto Str = V.getAsString();
+  if (!Str) {
+    elog("Failed to parse markup kind: expected a string");
+    return false;
+  }
+  if (*Str == "plaintext")
+    K = MarkupKind::PlainText;
+  else if (*Str == "markdown")
+    K = MarkupKind::Markdown;
+  else {
+    elog("Unknown markup kind: {0}", *Str);
+    return false;
+  }
+  return true;
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, MarkupKind K) {
+  return OS << toTextKind(K);
 }
 
 llvm::json::Value toJSON(const MarkupContent &MC) {
@@ -692,6 +900,7 @@ llvm::json::Value toJSON(const CompletionItem &CI) {
     Result["additionalTextEdits"] = llvm::json::Array(CI.additionalTextEdits);
   if (CI.deprecated)
     Result["deprecated"] = CI.deprecated;
+  Result["score"] = CI.score;
   return std::move(Result);
 }
 
@@ -713,8 +922,14 @@ llvm::json::Value toJSON(const CompletionList &L) {
 }
 
 llvm::json::Value toJSON(const ParameterInformation &PI) {
-  assert(!PI.label.empty() && "parameter information label is required");
-  llvm::json::Object Result{{"label", PI.label}};
+  assert((PI.labelOffsets.hasValue() || !PI.labelString.empty()) &&
+         "parameter information label is required");
+  llvm::json::Object Result;
+  if (PI.labelOffsets)
+    Result["label"] =
+        llvm::json::Array({PI.labelOffsets->first, PI.labelOffsets->second});
+  else
+    Result["label"] = PI.labelString;
   if (!PI.documentation.empty())
     Result["documentation"] = PI.documentation;
   return std::move(Result);
@@ -812,9 +1027,152 @@ bool fromJSON(const llvm::json::Value &Params, InitializationOptions &Opts) {
   return true;
 }
 
+bool fromJSON(const llvm::json::Value &E, TypeHierarchyDirection &Out) {
+  auto T = E.getAsInteger();
+  if (!T)
+    return false;
+  if (*T < static_cast<int>(TypeHierarchyDirection::Children) ||
+      *T > static_cast<int>(TypeHierarchyDirection::Both))
+    return false;
+  Out = static_cast<TypeHierarchyDirection>(*T);
+  return true;
+}
+
+bool fromJSON(const llvm::json::Value &Params, TypeHierarchyParams &R) {
+  llvm::json::ObjectMapper O(Params);
+  return O && O.map("textDocument", R.textDocument) &&
+         O.map("position", R.position) && O.map("resolve", R.resolve) &&
+         O.map("direction", R.direction);
+}
+
+llvm::raw_ostream &operator<<(llvm::raw_ostream &O,
+                              const TypeHierarchyItem &I) {
+  return O << I.name << " - " << toJSON(I);
+}
+
+llvm::json::Value toJSON(const TypeHierarchyItem &I) {
+  llvm::json::Object Result{{"name", I.name},
+                            {"kind", static_cast<int>(I.kind)},
+                            {"range", I.range},
+                            {"selectionRange", I.selectionRange},
+                            {"uri", I.uri}};
+
+  if (I.detail)
+    Result["detail"] = I.detail;
+  if (I.deprecated)
+    Result["deprecated"] = I.deprecated;
+  if (I.parents)
+    Result["parents"] = I.parents;
+  if (I.children)
+    Result["children"] = I.children;
+  if (I.data)
+    Result["data"] = I.data;
+  return std::move(Result);
+}
+
+bool fromJSON(const llvm::json::Value &Params, TypeHierarchyItem &I) {
+  llvm::json::ObjectMapper O(Params);
+
+  // Required fields.
+  if (!(O && O.map("name", I.name) && O.map("kind", I.kind) &&
+        O.map("uri", I.uri) && O.map("range", I.range) &&
+        O.map("selectionRange", I.selectionRange))) {
+    return false;
+  }
+
+  // Optional fields.
+  O.map("detail", I.detail);
+  O.map("deprecated", I.deprecated);
+  O.map("parents", I.parents);
+  O.map("children", I.children);
+  O.map("data", I.data);
+
+  return true;
+}
+
+bool fromJSON(const llvm::json::Value &Params,
+              ResolveTypeHierarchyItemParams &P) {
+  llvm::json::ObjectMapper O(Params);
+  return O && O.map("item", P.item) && O.map("resolve", P.resolve) &&
+         O.map("direction", P.direction);
+}
+
 bool fromJSON(const llvm::json::Value &Params, ReferenceParams &R) {
   TextDocumentPositionParams &Base = R;
   return fromJSON(Params, Base);
+}
+
+static const char *toString(OffsetEncoding OE) {
+  switch (OE) {
+  case OffsetEncoding::UTF8:
+    return "utf-8";
+  case OffsetEncoding::UTF16:
+    return "utf-16";
+  case OffsetEncoding::UTF32:
+    return "utf-32";
+  case OffsetEncoding::UnsupportedEncoding:
+    return "unknown";
+  }
+  llvm_unreachable("Unknown clang.clangd.OffsetEncoding");
+}
+llvm::json::Value toJSON(const OffsetEncoding &OE) { return toString(OE); }
+bool fromJSON(const llvm::json::Value &V, OffsetEncoding &OE) {
+  auto Str = V.getAsString();
+  if (!Str)
+    return false;
+  OE = llvm::StringSwitch<OffsetEncoding>(*Str)
+           .Case("utf-8", OffsetEncoding::UTF8)
+           .Case("utf-16", OffsetEncoding::UTF16)
+           .Case("utf-32", OffsetEncoding::UTF32)
+           .Default(OffsetEncoding::UnsupportedEncoding);
+  return true;
+}
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, OffsetEncoding Enc) {
+  return OS << toString(Enc);
+}
+
+bool operator==(const SemanticHighlightingInformation &Lhs,
+                const SemanticHighlightingInformation &Rhs) {
+  return Lhs.Line == Rhs.Line && Lhs.Tokens == Rhs.Tokens;
+}
+
+llvm::json::Value toJSON(const SemanticHighlightingInformation &Highlighting) {
+  return llvm::json::Object{{"line", Highlighting.Line},
+                            {"tokens", Highlighting.Tokens},
+                            {"isInactive", Highlighting.IsInactive}};
+}
+
+llvm::json::Value toJSON(const SemanticHighlightingParams &Highlighting) {
+  return llvm::json::Object{
+      {"textDocument", Highlighting.TextDocument},
+      {"lines", std::move(Highlighting.Lines)},
+  };
+}
+
+bool fromJSON(const llvm::json::Value &Params, SelectionRangeParams &P) {
+  llvm::json::ObjectMapper O(Params);
+  return O && O.map("textDocument", P.textDocument) &&
+         O.map("positions", P.positions);
+}
+
+llvm::json::Value toJSON(const SelectionRange &Out) {
+  if (Out.parent) {
+    return llvm::json::Object{{"range", Out.range},
+                              {"parent", toJSON(*Out.parent)}};
+  }
+  return llvm::json::Object{{"range", Out.range}};
+}
+
+bool fromJSON(const llvm::json::Value &Params, DocumentLinkParams &R) {
+  llvm::json::ObjectMapper O(Params);
+  return O && O.map("textDocument", R.textDocument);
+}
+
+llvm::json::Value toJSON(const DocumentLink &DocumentLink) {
+  return llvm::json::Object{
+      {"range", DocumentLink.range},
+      {"target", DocumentLink.target},
+  };
 }
 
 } // namespace clangd

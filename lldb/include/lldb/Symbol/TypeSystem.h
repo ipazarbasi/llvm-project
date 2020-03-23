@@ -6,16 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_TypeSystem_h_
-#define liblldb_TypeSystem_h_
+#ifndef LLDB_SYMBOL_TYPESYSTEM_H
+#define LLDB_SYMBOL_TYPESYSTEM_H
 
 #include <functional>
 #include <map>
 #include <mutex>
 #include <string>
 
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/Error.h"
 
 #include "lldb/Core/PluginInterface.h"
 #include "lldb/Expression/Expression.h"
@@ -25,60 +28,53 @@
 
 class DWARFDIE;
 class DWARFASTParser;
+class PDBASTParser;
 
 namespace lldb_private {
 
-//----------------------------------------------------------------------
-// Interface for representing the Type Systems in different languages.
-//----------------------------------------------------------------------
+/// A SmallBitVector that represents a set of source languages (\p
+/// lldb::LanguageType).  Each lldb::LanguageType is represented by
+/// the bit with the position of its enumerator. The largest
+/// LanguageType is < 64, so this is space-efficient and on 64-bit
+/// architectures a LanguageSet can be completely stack-allocated.
+struct LanguageSet {
+  llvm::SmallBitVector bitvector;
+  LanguageSet();
+
+  /// If the set contains a single language only, return it.
+  llvm::Optional<lldb::LanguageType> GetSingularLanguage();
+  void Insert(lldb::LanguageType language);
+  bool Empty() const;
+  size_t Size() const;
+  bool operator[](unsigned i) const;
+};
+
+/// Interface for representing a type system.
+///
+/// Implemented by language plugins to define the type system for a given
+/// language.
+///
+/// This interface extensively used opaque pointers to prevent that generic
+/// LLDB code has dependencies on language plugins. The type and semantics of
+/// these opaque pointers are defined by the TypeSystem implementation inside
+/// the respective language plugin. Opaque pointers from one TypeSystem
+/// instance should never be passed to a different TypeSystem instance (even
+/// when the language plugin for both TypeSystem instances is the same).
+///
+/// Most of the functions in this class should not be called directly but only
+/// called by their respective counterparts in CompilerType, CompilerDecl and
+/// CompilerDeclContext.
+///
+/// \see lldb_private::CompilerType
+/// \see lldb_private::CompilerDecl
+/// \see lldb_private::CompilerDeclContext
 class TypeSystem : public PluginInterface {
 public:
-  //----------------------------------------------------------------------
-  // Intrusive type system that allows us to use llvm casting.
-  //
-  // To add a new type system:
-  //
-  // 1 - Add a new enumeration for llvm casting below for your TypeSystem
-  //     subclass, here we will use eKindFoo
-  //
-  // 2 - Your TypeSystem subclass will inherit from TypeSystem and needs
-  //     to implement a static classof() function that returns your
-  //     enumeration:
-  //
-  //    class Foo : public lldb_private::TypeSystem
-  //    {
-  //        static bool classof(const TypeSystem *ts)
-  //        {
-  //            return ts->getKind() == TypeSystem::eKindFoo;
-  //        }
-  //    };
-  //
-  // 3 - Contruct your TypeSystem subclass with the enumeration from below
-  //
-  //    Foo() :
-  //        TypeSystem(TypeSystem::eKindFoo),
-  //        ...
-  //    {
-  //    }
-  //
-  // Then you can use the llvm casting on any "TypeSystem *" to get an instance
-  // of your subclass.
-  //----------------------------------------------------------------------
-  enum LLVMCastKind {
-    eKindClang,
-    eKindSwift,
-    eKindOCaml,
-    kNumKinds
-  };
-
-  //----------------------------------------------------------------------
   // Constructors and Destructors
-  //----------------------------------------------------------------------
-  TypeSystem(LLVMCastKind kind);
-
   ~TypeSystem() override;
 
-  LLVMCastKind getKind() const { return m_kind; }
+  // LLVM RTTI support
+  virtual bool isA(const void *ClassID) const = 0;
 
   static lldb::TypeSystemSP CreateInstance(lldb::LanguageType language,
                                            Module *module);
@@ -91,15 +87,14 @@ public:
   virtual void Finalize() {}
 
   virtual DWARFASTParser *GetDWARFParser() { return nullptr; }
+  virtual PDBASTParser *GetPDBParser() { return nullptr; }
 
   virtual SymbolFile *GetSymbolFile() const { return m_sym_file; }
 
   // Returns true if the symbol file changed during the set accessor.
   virtual void SetSymbolFile(SymbolFile *sym_file) { m_sym_file = sym_file; }
 
-  //----------------------------------------------------------------------
   // CompilerDecl functions
-  //----------------------------------------------------------------------
   virtual ConstString DeclGetName(void *opaque_decl) = 0;
 
   virtual ConstString DeclGetMangledName(void *opaque_decl);
@@ -113,15 +108,13 @@ public:
   virtual CompilerType DeclGetFunctionArgumentType(void *opaque_decl,
                                                    size_t arg_idx);
 
-  //----------------------------------------------------------------------
+  virtual CompilerType GetTypeForDecl(void *opaque_decl) = 0;
+
   // CompilerDeclContext functions
-  //----------------------------------------------------------------------
 
   virtual std::vector<CompilerDecl>
   DeclContextFindDeclByName(void *opaque_decl_ctx, ConstString name,
                             const bool ignore_imported_decls);
-
-  virtual bool DeclContextIsStructUnionOrClass(void *opaque_decl_ctx) = 0;
 
   virtual ConstString DeclContextGetName(void *opaque_decl_ctx) = 0;
 
@@ -135,9 +128,12 @@ public:
   virtual bool DeclContextIsContainedInLookup(void *opaque_decl_ctx,
                                               void *other_opaque_decl_ctx) = 0;
 
-  //----------------------------------------------------------------------
   // Tests
-  //----------------------------------------------------------------------
+#ifndef NDEBUG
+  /// Verify the integrity of the type to catch CompilerTypes that mix
+  /// and match invalid TypeSystem/Opaque type pairs.
+  virtual bool Verify(lldb::opaque_compiler_type_t type) = 0;
+#endif
 
   virtual bool IsArrayType(lldb::opaque_compiler_type_t type,
                            CompilerType *element_type, uint64_t *size,
@@ -191,26 +187,24 @@ public:
 
   virtual bool IsVoidType(lldb::opaque_compiler_type_t type) = 0;
 
+  virtual bool CanPassInRegisters(const CompilerType &type) = 0;
+
   // TypeSystems can support more than one language
   virtual bool SupportsLanguage(lldb::LanguageType language) = 0;
 
-  //----------------------------------------------------------------------
   // Type Completion
-  //----------------------------------------------------------------------
 
   virtual bool GetCompleteType(lldb::opaque_compiler_type_t type) = 0;
 
-  //----------------------------------------------------------------------
   // AST related queries
-  //----------------------------------------------------------------------
 
   virtual uint32_t GetPointerByteSize() = 0;
 
-  //----------------------------------------------------------------------
   // Accessors
-  //----------------------------------------------------------------------
 
   virtual ConstString GetTypeName(lldb::opaque_compiler_type_t type) = 0;
+
+  virtual ConstString GetDisplayTypeName(lldb::opaque_compiler_type_t type) = 0;
 
   virtual uint32_t
   GetTypeInfo(lldb::opaque_compiler_type_t type,
@@ -221,9 +215,7 @@ public:
 
   virtual lldb::TypeClass GetTypeClass(lldb::opaque_compiler_type_t type) = 0;
 
-  //----------------------------------------------------------------------
   // Creating related types
-  //----------------------------------------------------------------------
 
   virtual CompilerType GetArrayElementType(lldb::opaque_compiler_type_t type,
                                            uint64_t *stride) = 0;
@@ -259,6 +251,8 @@ public:
   virtual CompilerType
   GetRValueReferenceType(lldb::opaque_compiler_type_t type);
 
+  virtual CompilerType GetAtomicType(lldb::opaque_compiler_type_t type);
+
   virtual CompilerType AddConstModifier(lldb::opaque_compiler_type_t type);
 
   virtual CompilerType AddVolatileModifier(lldb::opaque_compiler_type_t type);
@@ -269,9 +263,9 @@ public:
                                      const char *name,
                                      const CompilerDeclContext &decl_ctx);
 
-  //----------------------------------------------------------------------
   // Exploring the type
-  //----------------------------------------------------------------------
+
+  virtual const llvm::fltSemantics &GetFloatTypeSemantics(size_t byte_size) = 0;
 
   virtual llvm::Optional<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
@@ -354,9 +348,7 @@ public:
   virtual llvm::Optional<CompilerType::IntegralTemplateArgument>
   GetIntegralTemplateArgument(lldb::opaque_compiler_type_t type, size_t idx);
 
-  //----------------------------------------------------------------------
   // Dumping types
-  //----------------------------------------------------------------------
 
 #ifndef NDEBUG
   /// Convenience LLVM-style dump method for use in the debugger only.
@@ -385,9 +377,7 @@ public:
   virtual void DumpTypeDescription(lldb::opaque_compiler_type_t type,
                                    Stream *s) = 0;
 
-  //----------------------------------------------------------------------
   // TODO: These methods appear unused. Should they be removed?
-  //----------------------------------------------------------------------
 
   virtual bool IsRuntimeGeneratedType(lldb::opaque_compiler_type_t type) = 0;
 
@@ -397,15 +387,7 @@ public:
                            lldb::offset_t data_offset,
                            size_t data_byte_size) = 0;
 
-  // Converts "s" to a floating point value and place resulting floating point
-  // bytes in the "dst" buffer.
-  virtual size_t ConvertStringToFloatValue(lldb::opaque_compiler_type_t type,
-                                           const char *s, uint8_t *dst,
-                                           size_t dst_size) = 0;
-
-  //----------------------------------------------------------------------
-  // TODO: Determine if these methods should move to ClangASTContext.
-  //----------------------------------------------------------------------
+  // TODO: Determine if these methods should move to TypeSystemClang.
 
   virtual bool IsPointerOrReferenceType(lldb::opaque_compiler_type_t type,
                                         CompilerType *pointee_type) = 0;
@@ -415,7 +397,9 @@ public:
   virtual bool IsCStringType(lldb::opaque_compiler_type_t type,
                              uint32_t &length) = 0;
 
-  virtual size_t GetTypeBitAlign(lldb::opaque_compiler_type_t type) = 0;
+  virtual llvm::Optional<size_t>
+  GetTypeBitAlign(lldb::opaque_compiler_type_t type,
+                  ExecutionContextScope *exe_scope) = 0;
 
   virtual CompilerType GetBasicTypeFromAST(lldb::BasicType basic_type) = 0;
 
@@ -498,8 +482,7 @@ public:
   virtual bool IsMeaninglessWithoutDynamicResolution(void *type);
 
 protected:
-  const LLVMCastKind m_kind; // Support for llvm casting
-  SymbolFile *m_sym_file;
+  SymbolFile *m_sym_file = nullptr;
 };
 
 class TypeSystemMap {
@@ -515,18 +498,15 @@ public:
   // callback to keep iterating, false to stop iterating.
   void ForEach(std::function<bool(TypeSystem *)> const &callback);
 
-  TypeSystem *GetTypeSystemForLanguage(lldb::LanguageType language,
-                                       Module *module, bool can_create);
+  llvm::Expected<TypeSystem &>
+  GetTypeSystemForLanguage(lldb::LanguageType language, Module *module,
+                           bool can_create);
 
-  TypeSystem *GetTypeSystemForLanguage(lldb::LanguageType language,
-                                       Target *target, bool can_create);
+  llvm::Expected<TypeSystem &>
+  GetTypeSystemForLanguage(lldb::LanguageType language, Target *target,
+                           bool can_create);
 
 protected:
-  // This function does not take the map mutex, and should only be called from
-  // functions that do take the mutex.
-  void AddToMap(lldb::LanguageType language,
-                lldb::TypeSystemSP const &type_system_sp);
-
   typedef std::map<lldb::LanguageType, lldb::TypeSystemSP> collection;
   mutable std::mutex m_mutex; ///< A mutex to keep this object happy in
                               ///multi-threaded environments.
@@ -536,4 +516,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // liblldb_TypeSystem_h_
+#endif // LLDB_SYMBOL_TYPESYSTEM_H

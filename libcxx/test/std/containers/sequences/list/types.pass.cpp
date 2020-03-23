@@ -21,9 +21,15 @@
 //     typedef typename allocator_type::pointer pointer;
 //     typedef typename allocator_type::const_pointer const_pointer;
 
+// MODULES_DEFINES: _LIBCPP_ENABLE_CXX20_REMOVED_ALLOCATOR_MEMBERS
+// MODULES_DEFINES: _LIBCPP_DISABLE_DEPRECATION_WARNINGS
+#define _LIBCPP_ENABLE_CXX20_REMOVED_ALLOCATOR_MEMBERS
+#define _LIBCPP_DISABLE_DEPRECATION_WARNINGS
+
 #include <list>
 #include <type_traits>
 
+#include "test_macros.h"
 #include "min_allocator.h"
 
 struct A { std::list<A> v; }; // incomplete type support

@@ -53,10 +53,12 @@
 
 name: basic_insert_dcache_wb
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
-    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0, 0
     S_ENDPGM 0
 ...
 ---
@@ -69,10 +71,12 @@ body: |
 
 name: explicit_flush_after
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
-    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0, 0
     S_DCACHE_WB
     S_ENDPGM 0
 ...
@@ -87,11 +91,13 @@ body: |
 
 name: explicit_flush_before
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
     S_DCACHE_WB
-    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0, 0
     S_ENDPGM 0
 ...
 ---
@@ -100,6 +106,8 @@ body: |
 # CHECK-NEXT: S_ENDPGM 0
 name: no_scalar_store
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
@@ -119,14 +127,16 @@ body: |
 
 name: multi_block_store
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
-    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0, 0
     S_ENDPGM 0
 
   bb.1:
-    S_STORE_DWORD_SGPR undef $sgpr4, undef $sgpr6_sgpr7, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr4, undef $sgpr6_sgpr7, undef $m0, 0, 0
     S_ENDPGM 0
 ...
 ...
@@ -146,13 +156,15 @@ body: |
 
 name: one_block_store
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
     S_ENDPGM 0
 
   bb.1:
-    S_STORE_DWORD_SGPR undef $sgpr4, undef $sgpr6_sgpr7, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr4, undef $sgpr6_sgpr7, undef $m0, 0, 0
     S_ENDPGM 0
 ...
 ---
@@ -165,9 +177,11 @@ body: |
 
 name: si_return
 tracksRegLiveness: false
+machineFunctionInfo:
+  isEntryFunction: true
 
 body: |
   bb.0:
-    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0
+    S_STORE_DWORD_SGPR undef $sgpr2, undef $sgpr0_sgpr1, undef $m0, 0, 0
     SI_RETURN_TO_EPILOG undef $vgpr0
 ...

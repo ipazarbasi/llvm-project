@@ -10,6 +10,8 @@
 #include "empty.h"
 #ifdef EARLY_INDIRECT_INCLUDE
 #include "indirect.h"
+// expected-warning@defs.h:28 3{{anonymous non-C-compatible type}}
+// expected-note@defs.h:28 6{{type is}}
 #endif
 
 A pre_a;
@@ -29,7 +31,7 @@ B::Inner2 pre_bi; // expected-error +{{must be imported}}
 // expected-note@defs.h:4 +{{here}}
 // expected-note@defs.h:17 +{{here}}
 void pre_bfi(B b) { // expected-error +{{must be imported}}
-  b.f<int>(); // expected-error +{{}}
+  b.f<int>();
 }
 
 C_Base<1> pre_cb1; // expected-error +{{must be imported}}
@@ -48,7 +50,7 @@ int pre_e = E(0); // expected-error {{must be imported}}
 // expected-note@defs.h:32 +{{here}}
 
 int pre_ff = F<int>().f(); // expected-error +{{must be imported}}
-int pre_fg = F<int>().g<int>(); // expected-error +{{must be imported}} expected-error 2{{expected}}
+int pre_fg = F<int>().g<int>(); // expected-error +{{must be imported}}
 // expected-note@defs.h:34 +{{here}}
 
 G::A pre_ga // expected-error +{{must be imported}}

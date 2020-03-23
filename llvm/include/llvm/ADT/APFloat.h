@@ -38,6 +38,7 @@ class StringRef;
 class APFloat;
 class raw_ostream;
 
+template <typename T> class Expected;
 template <typename T> class SmallVectorImpl;
 
 /// Enum that represents what fraction of the LSB truncated bits of an fp number
@@ -143,10 +144,21 @@ struct APFloatBase {
   static const unsigned integerPartWidth = APInt::APINT_BITS_PER_WORD;
 
   /// A signed type to represent a floating point numbers unbiased exponent.
-  typedef signed short ExponentType;
+  typedef int32_t ExponentType;
 
   /// \name Floating Point Semantics.
   /// @{
+  enum Semantics {
+    S_IEEEhalf,
+    S_IEEEsingle,
+    S_IEEEdouble,
+    S_x87DoubleExtended,
+    S_IEEEquad,
+    S_PPCDoubleDouble
+  };
+
+  static const llvm::fltSemantics &EnumToSemantics(Semantics S);
+  static Semantics SemanticsToEnum(const llvm::fltSemantics &Sem);
 
   static const fltSemantics &IEEEhalf() LLVM_READNONE;
   static const fltSemantics &IEEEsingle() LLVM_READNONE;
@@ -181,6 +193,11 @@ struct APFloatBase {
   /// IEEE-754R 7: Default exception handling.
   ///
   /// opUnderflow or opOverflow are always returned or-ed with opInexact.
+  ///
+  /// APFloat models this behavior specified by IEEE-754:
+  ///   "For operations producing results in floating-point format, the default
+  ///    result of an operation that signals the invalid operation exception
+  ///    shall be a quiet NaN."
   enum opStatus {
     opOK = 0x00,
     opInvalidOp = 0x01,
@@ -283,7 +300,7 @@ public:
                                           bool, roundingMode);
   opStatus convertFromZeroExtendedInteger(const integerPart *, unsigned int,
                                           bool, roundingMode);
-  opStatus convertFromString(StringRef, roundingMode);
+  Expected<opStatus> convertFromString(StringRef, roundingMode);
   APInt bitcastToAPInt() const;
   double convertToDouble() const;
   float convertToFloat() const;
@@ -470,7 +487,8 @@ private:
   integerPart addSignificand(const IEEEFloat &);
   integerPart subtractSignificand(const IEEEFloat &, integerPart);
   lostFraction addOrSubtractSignificand(const IEEEFloat &, bool subtract);
-  lostFraction multiplySignificand(const IEEEFloat &, const IEEEFloat *);
+  lostFraction multiplySignificand(const IEEEFloat &, IEEEFloat);
+  lostFraction multiplySignificand(const IEEEFloat&);
   lostFraction divideSignificand(const IEEEFloat &);
   void incrementSignificand();
   void initialize(const fltSemantics *);
@@ -493,6 +511,7 @@ private:
   opStatus divideSpecials(const IEEEFloat &);
   opStatus multiplySpecials(const IEEEFloat &);
   opStatus modSpecials(const IEEEFloat &);
+  opStatus remainderSpecials(const IEEEFloat&);
 
   /// @}
 
@@ -509,8 +528,8 @@ private:
                                         bool *) const;
   opStatus convertFromUnsignedParts(const integerPart *, unsigned int,
                                     roundingMode);
-  opStatus convertFromHexadecimalString(StringRef, roundingMode);
-  opStatus convertFromDecimalString(StringRef, roundingMode);
+  Expected<opStatus> convertFromHexadecimalString(StringRef, roundingMode);
+  Expected<opStatus> convertFromDecimalString(StringRef, roundingMode);
   char *convertNormalToHexString(char *, unsigned int, bool,
                                  roundingMode) const;
   opStatus roundSignificandWithExponent(const integerPart *, unsigned int, int,
@@ -632,7 +651,7 @@ public:
   cmpResult compare(const DoubleAPFloat &RHS) const;
   bool bitwiseIsEqual(const DoubleAPFloat &RHS) const;
   APInt bitcastToAPInt() const;
-  opStatus convertFromString(StringRef, roundingMode);
+  Expected<opStatus> convertFromString(StringRef, roundingMode);
   opStatus next(bool nextDown);
 
   opStatus convertToInteger(MutableArrayRef<integerPart> Input,
@@ -835,6 +854,9 @@ public:
   APFloat(const fltSemantics &Semantics) : U(Semantics) {}
   APFloat(const fltSemantics &Semantics, StringRef S);
   APFloat(const fltSemantics &Semantics, integerPart I) : U(Semantics, I) {}
+  template <typename T,
+            typename = std::enable_if_t<std::is_floating_point<T>::value>>
+  APFloat(const fltSemantics &Semantics, T V) = delete;
   // TODO: Remove this constructor. This isn't faster than the first one.
   APFloat(const fltSemantics &Semantics, uninitializedTag)
       : U(Semantics, uninitialized) {}
@@ -1014,6 +1036,13 @@ public:
     APFLOAT_DISPATCH_ON_SEMANTICS(next(nextDown));
   }
 
+  /// Negate an APFloat.
+  APFloat operator-() const {
+    APFloat Result(*this);
+    Result.changeSign();
+    return Result;
+  }
+
   /// Add two APFloats, rounding ties to the nearest even.
   /// No error checking.
   APFloat operator+(const APFloat &RHS) const {
@@ -1089,14 +1118,34 @@ public:
     APFLOAT_DISPATCH_ON_SEMANTICS(
         convertFromZeroExtendedInteger(Input, InputSize, IsSigned, RM));
   }
-  opStatus convertFromString(StringRef, roundingMode);
+  Expected<opStatus> convertFromString(StringRef, roundingMode);
   APInt bitcastToAPInt() const {
     APFLOAT_DISPATCH_ON_SEMANTICS(bitcastToAPInt());
   }
   double convertToDouble() const { return getIEEE().convertToDouble(); }
   float convertToFloat() const { return getIEEE().convertToFloat(); }
 
-  bool operator==(const APFloat &) const = delete;
+  bool operator==(const APFloat &RHS) const { return compare(RHS) == cmpEqual; }
+
+  bool operator!=(const APFloat &RHS) const { return compare(RHS) != cmpEqual; }
+
+  bool operator<(const APFloat &RHS) const {
+    return compare(RHS) == cmpLessThan;
+  }
+
+  bool operator>(const APFloat &RHS) const {
+    return compare(RHS) == cmpGreaterThan;
+  }
+
+  bool operator<=(const APFloat &RHS) const {
+    cmpResult Res = compare(RHS);
+    return Res == cmpLessThan || Res == cmpEqual;
+  }
+
+  bool operator>=(const APFloat &RHS) const {
+    cmpResult Res = compare(RHS);
+    return Res == cmpGreaterThan || Res == cmpEqual;
+  }
 
   cmpResult compare(const APFloat &RHS) const {
     assert(&getSemantics() == &RHS.getSemantics() &&
@@ -1228,7 +1277,7 @@ inline APFloat minnum(const APFloat &A, const APFloat &B) {
     return B;
   if (B.isNaN())
     return A;
-  return (B.compare(A) == APFloat::cmpLessThan) ? B : A;
+  return B < A ? B : A;
 }
 
 /// Implements IEEE maxNum semantics. Returns the larger of the 2 arguments if
@@ -1239,7 +1288,7 @@ inline APFloat maxnum(const APFloat &A, const APFloat &B) {
     return B;
   if (B.isNaN())
     return A;
-  return (A.compare(B) == APFloat::cmpLessThan) ? B : A;
+  return A < B ? B : A;
 }
 
 /// Implements IEEE 754-2018 minimum semantics. Returns the smaller of 2
@@ -1252,7 +1301,7 @@ inline APFloat minimum(const APFloat &A, const APFloat &B) {
     return B;
   if (A.isZero() && B.isZero() && (A.isNegative() != B.isNegative()))
     return A.isNegative() ? A : B;
-  return (B.compare(A) == APFloat::cmpLessThan) ? B : A;
+  return B < A ? B : A;
 }
 
 /// Implements IEEE 754-2018 maximum semantics. Returns the larger of 2
@@ -1265,7 +1314,7 @@ inline APFloat maximum(const APFloat &A, const APFloat &B) {
     return B;
   if (A.isZero() && B.isZero() && (A.isNegative() != B.isNegative()))
     return A.isNegative() ? B : A;
-  return (A.compare(B) == APFloat::cmpLessThan) ? B : A;
+  return A < B ? B : A;
 }
 
 } // namespace llvm

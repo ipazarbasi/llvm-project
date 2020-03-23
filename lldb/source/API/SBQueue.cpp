@@ -1,4 +1,4 @@
-//===-- SBQueue.cpp ---------------------------------------------*- C++ -*-===//
+//===-- SBQueue.cpp -------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -47,9 +47,9 @@ public:
     m_pending_items_fetched = rhs.m_pending_items_fetched;
   }
 
-  ~QueueImpl() {}
+  ~QueueImpl() = default;
 
-  bool IsValid() { return m_queue_wp.lock() != NULL; }
+  bool IsValid() { return m_queue_wp.lock() != nullptr; }
 
   void Clear() {
     m_queue_wp.reset();
@@ -83,7 +83,7 @@ public:
   }
 
   const char *GetName() const {
-    const char *name = NULL;
+    const char *name = nullptr;
     lldb::QueueSP queue_sp = m_queue_wp.lock();
     if (queue_sp.get()) {
       name = queue_sp->GetName();
@@ -240,10 +240,10 @@ const lldb::SBQueue &SBQueue::operator=(const lldb::SBQueue &rhs) {
                      SBQueue, operator=,(const lldb::SBQueue &), rhs);
 
   m_opaque_sp = rhs.m_opaque_sp;
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
-SBQueue::~SBQueue() {}
+SBQueue::~SBQueue() = default;
 
 bool SBQueue::IsValid() const {
   LLDB_RECORD_METHOD_CONST_NO_ARGS(bool, SBQueue, IsValid);
@@ -327,4 +327,33 @@ lldb::QueueKind SBQueue::GetKind() {
   LLDB_RECORD_METHOD_NO_ARGS(lldb::QueueKind, SBQueue, GetKind);
 
   return m_opaque_sp->GetKind();
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBQueue>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBQueue, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBQueue, (const lldb::QueueSP &));
+  LLDB_REGISTER_CONSTRUCTOR(SBQueue, (const lldb::SBQueue &));
+  LLDB_REGISTER_METHOD(const lldb::SBQueue &,
+                       SBQueue, operator=,(const lldb::SBQueue &));
+  LLDB_REGISTER_METHOD_CONST(bool, SBQueue, IsValid, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBQueue, operator bool, ());
+  LLDB_REGISTER_METHOD(void, SBQueue, Clear, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::queue_id_t, SBQueue, GetQueueID, ());
+  LLDB_REGISTER_METHOD_CONST(uint32_t, SBQueue, GetIndexID, ());
+  LLDB_REGISTER_METHOD_CONST(const char *, SBQueue, GetName, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBQueue, GetNumThreads, ());
+  LLDB_REGISTER_METHOD(lldb::SBThread, SBQueue, GetThreadAtIndex, (uint32_t));
+  LLDB_REGISTER_METHOD(uint32_t, SBQueue, GetNumPendingItems, ());
+  LLDB_REGISTER_METHOD(lldb::SBQueueItem, SBQueue, GetPendingItemAtIndex,
+                       (uint32_t));
+  LLDB_REGISTER_METHOD(uint32_t, SBQueue, GetNumRunningItems, ());
+  LLDB_REGISTER_METHOD(lldb::SBProcess, SBQueue, GetProcess, ());
+  LLDB_REGISTER_METHOD(lldb::QueueKind, SBQueue, GetKind, ());
+}
+
+}
 }

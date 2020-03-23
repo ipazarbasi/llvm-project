@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_RegisterContextPOSIX_powerpc_h_
-#define liblldb_RegisterContextPOSIX_powerpc_h_
+#ifndef LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_POWERPC_H
+#define LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_POWERPC_H
 
 #include "RegisterContext_powerpc.h"
 #include "RegisterInfoInterface.h"
@@ -16,9 +16,7 @@
 
 class ProcessMonitor;
 
-// ---------------------------------------------------------------------------
 // Internal codes for all powerpc registers.
-// ---------------------------------------------------------------------------
 enum {
   k_first_gpr_powerpc,
   gpr_r0_powerpc = k_first_gpr_powerpc,
@@ -201,4 +199,4 @@ protected:
   virtual bool WriteVMX() = 0;
 };
 
-#endif // liblldb_RegisterContextPOSIX_powerpc_h_
+#endif // LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_POWERPC_H

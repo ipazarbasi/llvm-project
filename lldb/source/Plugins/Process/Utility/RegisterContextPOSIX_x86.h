@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_RegisterContextPOSIX_x86_h_
-#define liblldb_RegisterContextPOSIX_x86_h_
+#ifndef LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_X86_H
+#define LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_X86_H
 
 #include "RegisterContext_x86.h"
 #include "RegisterInfoInterface.h"
@@ -50,9 +50,7 @@ public:
   uint32_t ConvertRegisterKindToRegisterNumber(lldb::RegisterKind kind,
                                                uint32_t num) override;
 
-  //---------------------------------------------------------------------------
   // Note: prefer kernel definitions over user-land
-  //---------------------------------------------------------------------------
   enum FPRType {
     eNotValid = 0,
     eFSAVE, // TODO
@@ -175,4 +173,4 @@ protected:
   virtual bool WriteFPR() = 0;
 };
 
-#endif // liblldb_RegisterContextPOSIX_x86_h_
+#endif // LLDB_SOURCE_PLUGINS_PROCESS_UTILITY_REGISTERCONTEXTPOSIX_X86_H

@@ -1,6 +1,10 @@
 // RUN: %clang_cc1 -triple x86_64-apple-darwin9.0.0 -verify -std=c++11 %s
 // RUN: %clang_cc1 -triple x86_64-apple-darwin9.0.0 -xobjective-c++ -verify -std=c++11 %s
 
+#if !__has_extension(pragma_clang_attribute_external_declaration)
+#error
+#endif
+
 #define BEGIN_PRAGMA _Pragma("clang attribute push (__attribute__((availability(macos, introduced=1000))), apply_to=function)")
 #define END_PRAGMA _Pragma("clang attribute pop")
 
@@ -27,8 +31,7 @@ int c = my_ns::nested::h(); // expected-warning{{'h' is only available on macOS 
 
 struct InStruct {
   // FIXME: This asserts in Objective-C++!
-  // FIXME: This is a horrible diagnostic!
 #ifndef __OBJC__
-  BEGIN_PRAGMA // expected-error {{expected member name or ';' after declaration specifiers}}
+  BEGIN_PRAGMA // expected-error {{this pragma cannot appear in struct declaration}}
 #endif
 };

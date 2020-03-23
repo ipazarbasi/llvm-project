@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_OptionValueBoolean_h_
-#define liblldb_OptionValueBoolean_h_
+#ifndef LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H
+#define LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H
 
 #include "lldb/Interpreter/OptionValue.h"
 
@@ -23,9 +23,7 @@ public:
 
   ~OptionValueBoolean() override {}
 
-  //---------------------------------------------------------------------
   // Virtual subclass pure virtual overrides
-  //---------------------------------------------------------------------
 
   OptionValue::Type GetType() const override { return eTypeBoolean; }
 
@@ -45,14 +43,11 @@ public:
     return true;
   }
 
-  size_t AutoComplete(CommandInterpreter &interpreter,
-                      CompletionRequest &request) override;
+  void AutoComplete(CommandInterpreter &interpreter,
+                    CompletionRequest &request) override;
 
-  //---------------------------------------------------------------------
   // Subclass specific functions
-  //---------------------------------------------------------------------
 
-  //------------------------------------------------------------------
   /// Convert to bool operator.
   ///
   /// This allows code to check a OptionValueBoolean in conditions.
@@ -66,7 +61,6 @@ public:
   /// \return
   ///     /b True this object contains a valid namespace decl, \b
   ///     false otherwise.
-  //------------------------------------------------------------------
   explicit operator bool() const { return m_current_value; }
 
   const bool &operator=(bool b) {
@@ -91,4 +85,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // liblldb_OptionValueBoolean_h_
+#endif // LLDB_INTERPRETER_OPTIONVALUEBOOLEAN_H

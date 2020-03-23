@@ -59,6 +59,8 @@ defm Tdata: Eq<"Tdata", "Same as --section-start with .data as the sectionname">
 
 defm Ttext: Eq<"Ttext", "Same as --section-start with .text as the sectionname">;
 
+def Ttext_segment: Separate<["-", "--"], "Ttext-segment">;
+
 defm allow_multiple_definition: B<"allow-multiple-definition",
     "Allow multiple definitions",
     "Do not allow multiple definitions (default)">;
@@ -70,6 +72,10 @@ defm allow_shlib_undefined: B<"allow-shlib-undefined",
 defm apply_dynamic_relocs: B<"apply-dynamic-relocs",
     "Apply link-time values for dynamic relocations",
     "Do not apply link-time values for dynamic relocations (default)">;
+
+defm dependent_libraries: B<"dependent-libraries",
+    "Process dependent library specifiers from input files (default)",
+    "Ignore dependent library specifiers from input files">;
 
 defm as_needed: B<"as-needed",
     "Only set DT_NEEDED for shared libraries if used",
@@ -167,6 +173,9 @@ defm fini: Eq<"fini", "Specify a finalizer function">, MetaVarName<"<symbol>">;
 def fix_cortex_a53_843419: F<"fix-cortex-a53-843419">,
   HelpText<"Apply fixes for AArch64 Cortex-A53 erratum 843419">;
 
+def fix_cortex_a8: F<"fix-cortex-a8">,
+  HelpText<"Apply fixes for ARM Cortex-A8 erratum 657417">;
+
 defm format: Eq<"format", "Change the input format of the inputs following this option">,
   MetaVarName<"[default,elf,binary]">;
 
@@ -218,6 +227,13 @@ defm merge_exidx_entries: B<"merge-exidx-entries",
     "Enable merging .ARM.exidx entries (default)",
     "Disable merging .ARM.exidx entries">;
 
+defm mmap_output_file: B<"mmap-output-file",
+    "Mmap the output file for writing (default)",
+    "Do not mmap the output file for writing">;
+
+def nmagic: F<"nmagic">, MetaVarName<"<magic>">,
+  HelpText<"Do not page align sections, link against static libraries.">;
+
 def nostdlib: F<"nostdlib">,
   HelpText<"Only search directories specified on the command line">;
 
@@ -230,8 +246,11 @@ def no_dynamic_linker: F<"no-dynamic-linker">,
 def noinhibit_exec: F<"noinhibit-exec">,
   HelpText<"Retain the executable output file whenever it is still usable">;
 
+def no_nmagic: F<"no-nmagic">, MetaVarName<"<magic>">,
+  HelpText<"Page align sections (default)">;
+
 def no_omagic: F<"no-omagic">, MetaVarName<"<magic>">,
-  HelpText<"Do not set the text data sections to be writable">;
+  HelpText<"Do not set the text data sections to be writable, page align sections (default)">;
 
 def no_rosegment: F<"no-rosegment">,
   HelpText<"Do not put read-only non-executable sections in their own segment">;
@@ -246,7 +265,7 @@ def oformat: Separate<["--"], "oformat">, MetaVarName<"<format>">,
   HelpText<"Specify the binary format for the output object file">;
 
 def omagic: Flag<["--"], "omagic">, MetaVarName<"<magic>">,
-  HelpText<"Set the text and data sections to be readable and writable">;
+  HelpText<"Set the text and data sections to be readable and writable, do not page align sections, link against static libraries">;
 
 defm orphan_handling:
   Eq<"orphan-handling", "Control how orphan sections are handled when linker script used">;
@@ -274,6 +293,9 @@ defm print_icf_sections: B<"print-icf-sections",
     "List identical folded sections",
     "Do not list identical folded sections (default)">;
 
+defm print_symbol_order: Eq<"print-symbol-order",
+  "Print a symbol order specified by --call-graph-ordering-file into the specified file">;
+
 def pop_state: F<"pop-state">,
   HelpText<"Undo the effect of -push-state">;
 
@@ -283,7 +305,7 @@ def push_state: F<"push-state">,
 def print_map: F<"print-map">,
   HelpText<"Print a link map to the standard output">;
 
-defm reproduce: Eq<"reproduce", "Dump linker invocation and input files for debugging">;
+defm reproduce: Eq<"reproduce", "Write a tar file containing input files and command line options to reproduce link">;
 
 defm rpath: Eq<"rpath", "Add a DT_RUNPATH to the output">;
 
@@ -332,6 +354,12 @@ defm threads: B<"threads",
     "Run the linker multi-threaded (default)",
     "Do not run the linker multi-threaded">;
 
+def time_trace: F<"time-trace">, HelpText<"Record time trace">;
+def time_trace_file_eq: J<"time-trace-file=">, HelpText<"Specify time trace output file">;
+
+defm time_trace_granularity: Eq<"time-trace-granularity",
+  "Minimum time granularity (in microseconds) traced by time profiler">;
+
 defm toc_optimize : B<"toc-optimize",
     "(PowerPC64) Enable TOC related optimizations (default)",
     "(PowerPC64) Disable TOC related optimizations">;
@@ -342,6 +370,11 @@ defm trace_symbol: Eq<"trace-symbol", "Trace references to symbols">;
 
 defm undefined: Eq<"undefined", "Force undefined symbol during linking">,
   MetaVarName<"<symbol>">;
+
+defm undefined_glob: Eq<"undefined-glob", "Force undefined symbol during linking">,
+  MetaVarName<"<pattern>">;
+
+def unique: F<"unique">, HelpText<"Creates a separate output section for every orphan input section">;
 
 defm unresolved_symbols:
   Eq<"unresolved-symbols", "Determine how to handle unresolved symbols">;
@@ -390,6 +423,9 @@ defm wrap: Eq<"wrap", "Use wrapper functions for symbol">,
 def z: JoinedOrSeparate<["-"], "z">, MetaVarName<"<option>">,
   HelpText<"Linker option extensions">;
 
+def visual_studio_diagnostics_format : F<"vs-diagnostics">,
+HelpText<"Format diagnostics for Visual Studio compatibility">;
+
 // Aliases
 def: Separate<["-"], "f">, Alias<auxiliary>, HelpText<"Alias for --auxiliary">;
 def: F<"call_shared">, Alias<Bdynamic>, HelpText<"Alias for --Bdynamic">;
@@ -411,6 +447,7 @@ def: Separate<["-"], "b">, Alias<format>, HelpText<"Alias for --format">;
 def: JoinedOrSeparate<["-"], "l">, Alias<library>, HelpText<"Alias for --library">;
 def: JoinedOrSeparate<["-"], "L">, Alias<library_path>, HelpText<"Alias for --library-path">;
 def: F<"no-pic-executable">, Alias<no_pie>, HelpText<"Alias for --no-pie">;
+def: Flag<["-"], "n">, Alias<nmagic>, HelpText<"Alias for --nmagic">;
 def: Flag<["-"], "N">, Alias<omagic>, HelpText<"Alias for --omagic">;
 def: Joined<["--"], "output=">, Alias<o>, HelpText<"Alias for -o">;
 def: Separate<["--"], "output">, Alias<o>, HelpText<"Alias for -o">;
@@ -425,9 +462,8 @@ def: Flag<["-"], "(">, Alias<start_group>, HelpText<"Alias for --start-group">;
 def: Flag<["-"], "s">, Alias<strip_all>, HelpText<"Alias for --strip-all">;
 def: Flag<["-"], "S">, Alias<strip_debug>, HelpText<"Alias for --strip-debug">;
 def: Flag<["-"], "t">, Alias<trace>, HelpText<"Alias for --trace">;
+def: Joined<["-", "--"], "Ttext-segment=">, Alias<Ttext_segment>;
 def: JoinedOrSeparate<["-"], "y">, Alias<trace_symbol>, HelpText<"Alias for --trace-symbol">;
-def: Separate<["-", "--"], "Ttext-segment">, Alias<Ttext>, HelpText<"Alias for --Ttext">;
-def: Joined<["-", "--"], "Ttext-segment=">, Alias<Ttext>, HelpText<"Alias for --Ttext">;
 def: JoinedOrSeparate<["-"], "u">, Alias<undefined>, HelpText<"Alias for --undefined">;
 def: Flag<["-"], "V">, Alias<version>, HelpText<"Alias for --version">;
 
@@ -445,11 +481,14 @@ def lto_O: J<"lto-O">, MetaVarName<"<opt-level>">,
 def lto_partitions: J<"lto-partitions=">,
   HelpText<"Number of LTO codegen partitions">;
 def lto_cs_profile_generate: F<"lto-cs-profile-generate">,
-  HelpText<"Perform context senstive PGO instrumentation">;
+  HelpText<"Perform context sensitive PGO instrumentation">;
 def lto_cs_profile_file: J<"lto-cs-profile-file=">,
   HelpText<"Context sensitive profile file path">;
+def lto_obj_path_eq: J<"lto-obj-path=">;
 def lto_sample_profile: J<"lto-sample-profile=">,
   HelpText<"Sample profile file path">;
+def lto_whole_program_visibility: F<"lto-whole-program-visibility">,
+  HelpText<"Asserts that the LTO link has whole program visibility">;
 def disable_verify: F<"disable-verify">;
 defm mllvm: Eq<"mllvm", "Additional arguments to forward to LLVM's option processing">;
 def opt_remarks_filename: Separate<["--"], "opt-remarks-filename">,
@@ -458,12 +497,21 @@ def opt_remarks_passes: Separate<["--"], "opt-remarks-passes">,
   HelpText<"Regex for the passes that need to be serialized to the output file">;
 def opt_remarks_with_hotness: Flag<["--"], "opt-remarks-with-hotness">,
   HelpText<"Include hotness information in the optimization remarks file">;
+def opt_remarks_format: Separate<["--"], "opt-remarks-format">,
+  HelpText<"The format used for serializing remarks (default: YAML)">;
 defm plugin_opt: Eq<"plugin-opt", "specifies LTO options for compatibility with GNU linkers">;
 def save_temps: F<"save-temps">;
+def shuffle_sections: J<"shuffle-sections=">, MetaVarName<"<seed>">,
+  HelpText<"Shuffle input sections using the given seed. If 0, use a random seed">;
 def thinlto_cache_dir: J<"thinlto-cache-dir=">,
   HelpText<"Path to ThinLTO cached object file directory">;
 defm thinlto_cache_policy: Eq<"thinlto-cache-policy", "Pruning policy for the ThinLTO cache">;
+def thinlto_emit_imports_files: F<"thinlto-emit-imports-files">;
+def thinlto_index_only: F<"thinlto-index-only">;
+def thinlto_index_only_eq: J<"thinlto-index-only=">;
 def thinlto_jobs: J<"thinlto-jobs=">, HelpText<"Number of ThinLTO jobs">;
+def thinlto_object_suffix_replace_eq: J<"thinlto-object-suffix-replace=">;
+def thinlto_prefix_replace_eq: J<"thinlto-prefix-replace=">;
 
 def: J<"plugin-opt=O">, Alias<lto_O>, HelpText<"Alias for -lto-O">;
 def: F<"plugin-opt=debug-pass-manager">,
@@ -477,19 +525,31 @@ def: J<"plugin-opt=lto-partitions=">, Alias<lto_partitions>, HelpText<"Alias for
 def plugin_opt_mcpu_eq: J<"plugin-opt=mcpu=">;
 def: F<"plugin-opt=new-pass-manager">,
   Alias<lto_new_pass_manager>, HelpText<"Alias for -lto-new-pass-manager">;
-def plugin_opt_obj_path_eq: J<"plugin-opt=obj-path=">;
 def: F<"plugin-opt=cs-profile-generate">,
   Alias<lto_cs_profile_generate>, HelpText<"Alias for -lto-cs-profile-generate">;
 def: J<"plugin-opt=cs-profile-path=">,
   Alias<lto_cs_profile_file>, HelpText<"Alias for -lto-cs-profile-file">;
+def: J<"plugin-opt=obj-path=">,
+  Alias<lto_obj_path_eq>,
+  HelpText<"Alias for -lto-obj-path=">;
 def: J<"plugin-opt=sample-profile=">,
   Alias<lto_sample_profile>, HelpText<"Alias for -lto-sample-profile">;
 def: F<"plugin-opt=save-temps">, Alias<save_temps>, HelpText<"Alias for -save-temps">;
-def plugin_opt_thinlto_emit_imports_files: F<"plugin-opt=thinlto-emit-imports-files">;
-def plugin_opt_thinlto_index_only: F<"plugin-opt=thinlto-index-only">;
-def plugin_opt_thinlto_index_only_eq: J<"plugin-opt=thinlto-index-only=">;
-def plugin_opt_thinlto_object_suffix_replace_eq: J<"plugin-opt=thinlto-object-suffix-replace=">;
-def plugin_opt_thinlto_prefix_replace_eq: J<"plugin-opt=thinlto-prefix-replace=">;
+def: F<"plugin-opt=thinlto-emit-imports-files">,
+  Alias<thinlto_emit_imports_files>,
+  HelpText<"Alias for -thinlto-emit-imports-files">;
+def: F<"plugin-opt=thinlto-index-only">,
+  Alias<thinlto_index_only>,
+  HelpText<"Alias for -thinlto-index-only">;
+def: J<"plugin-opt=thinlto-index-only=">,
+  Alias<thinlto_index_only_eq>,
+  HelpText<"Alias for -thinlto-index-only=">;
+def: J<"plugin-opt=thinlto-object-suffix-replace=">,
+ Alias<thinlto_object_suffix_replace_eq>,
+ HelpText<"Alias for -thinlto-object-suffix-replace=">;
+def: J<"plugin-opt=thinlto-prefix-replace=">,
+  Alias<thinlto_prefix_replace_eq>,
+  HelpText<"Alias for -thinlto-prefix-replace=">;
 
 // Ignore LTO plugin-related options.
 // clang -flto passes -plugin and -plugin-opt to the linker. This is required
@@ -513,12 +573,12 @@ def: F<"no-add-needed">;
 def: F<"no-copy-dt-needed-entries">;
 def: F<"no-ctors-in-init-array">;
 def: F<"no-keep-memory">;
-def: F<"no-mmap-output-file">;
 def: F<"no-pipeline-knowledge">;
 def: F<"no-warn-mismatch">;
 def: Flag<["-"], "p">;
 def: Separate<["--", "-"], "rpath-link">;
 def: J<"rpath-link=">;
+def: F<"secure-plt">;
 def: F<"sort-common">;
 def: F<"stats">;
 def: F<"warn-execstack">;

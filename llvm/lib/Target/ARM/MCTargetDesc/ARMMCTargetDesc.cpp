@@ -12,8 +12,9 @@
 
 #include "ARMMCTargetDesc.h"
 #include "ARMBaseInfo.h"
+#include "ARMInstPrinter.h"
 #include "ARMMCAsmInfo.h"
-#include "InstPrinter/ARMInstPrinter.h"
+#include "TargetInfo/ARMTargetInfo.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCCodeEmitter.h"
@@ -167,7 +168,7 @@ MCSubtargetInfo *ARM_MC::createARMMCSubtargetInfo(const Triple &TT,
     if (!ArchFS.empty())
       ArchFS = (Twine(ArchFS) + "," + FS).str();
     else
-      ArchFS = FS;
+      ArchFS = std::string(FS);
   }
 
   return createARMMCSubtargetInfoImpl(TT, CPU, ArchFS);
@@ -186,7 +187,8 @@ static MCRegisterInfo *createARMMCRegisterInfo(const Triple &Triple) {
 }
 
 static MCAsmInfo *createARMMCAsmInfo(const MCRegisterInfo &MRI,
-                                     const Triple &TheTriple) {
+                                     const Triple &TheTriple,
+                                     const MCTargetOptions &Options) {
   MCAsmInfo *MAI;
   if (TheTriple.isOSDarwin() || TheTriple.isOSBinFormatMachO())
     MAI = new ARMMCAsmInfoDarwin(TheTriple);
@@ -210,7 +212,8 @@ static MCStreamer *createELFStreamer(const Triple &T, MCContext &Ctx,
                                      bool RelaxAll) {
   return createARMELFStreamer(
       Ctx, std::move(MAB), std::move(OW), std::move(Emitter), false,
-      (T.getArch() == Triple::thumb || T.getArch() == Triple::thumbeb));
+      (T.getArch() == Triple::thumb || T.getArch() == Triple::thumbeb),
+      T.isAndroid());
 }
 
 static MCStreamer *
@@ -276,14 +279,34 @@ class ThumbMCInstrAnalysis : public ARMMCInstrAnalysis {
 public:
   ThumbMCInstrAnalysis(const MCInstrInfo *Info) : ARMMCInstrAnalysis(Info) {}
 
-  bool evaluateBranch(const MCInst &Inst, uint64_t Addr,
-                      uint64_t Size, uint64_t &Target) const override {
+  bool evaluateBranch(const MCInst &Inst, uint64_t Addr, uint64_t Size,
+                      uint64_t &Target) const override {
+    unsigned OpId;
+    switch (Inst.getOpcode()) {
+    default:
+      OpId = 0;
+      break;
+    case ARM::MVE_WLSTP_8:
+    case ARM::MVE_WLSTP_16:
+    case ARM::MVE_WLSTP_32:
+    case ARM::MVE_WLSTP_64:
+    case ARM::t2WLS:
+    case ARM::MVE_LETP:
+    case ARM::t2LEUpdate:
+      OpId = 2;
+      break;
+    case ARM::t2LE:
+      OpId = 1;
+      break;
+    }
+
     // We only handle PCRel branches for now.
-    if (Info->get(Inst.getOpcode()).OpInfo[0].OperandType!=MCOI::OPERAND_PCREL)
+    if (Info->get(Inst.getOpcode()).OpInfo[OpId].OperandType !=
+        MCOI::OPERAND_PCREL)
       return false;
 
-    int64_t Imm = Inst.getOperand(0).getImm();
-    Target = Addr+Imm+4; // In Thumb mode the PC is always off by 4 bytes.
+    // In Thumb mode the PC is always off by 4 bytes.
+    Target = Addr + Inst.getOperand(OpId).getImm() + 4;
     return true;
   }
 };
@@ -298,8 +321,16 @@ static MCInstrAnalysis *createThumbMCInstrAnalysis(const MCInstrInfo *Info) {
   return new ThumbMCInstrAnalysis(Info);
 }
 
+bool ARM::isCDECoproc(size_t Coproc, const MCSubtargetInfo &STI) {
+  // Unfortunately we don't have ARMTargetInfo in the disassembler, so we have
+  // to rely on feature bits.
+  if (Coproc >= 8)
+    return false;
+  return STI.getFeatureBits()[ARM::FeatureCoprocCDE0 + Coproc];
+}
+
 // Force static initialization.
-extern "C" void LLVMInitializeARMTargetMC() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeARMTargetMC() {
   for (Target *T : {&getTheARMLETarget(), &getTheARMBETarget(),
                     &getTheThumbLETarget(), &getTheThumbBETarget()}) {
     // Register the MC asm info.

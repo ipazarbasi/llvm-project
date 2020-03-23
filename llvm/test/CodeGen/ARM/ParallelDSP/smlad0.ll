@@ -1,4 +1,5 @@
 ; RUN: opt -mtriple=arm-arm-eabi -mcpu=cortex-m33 < %s -arm-parallel-dsp -S | FileCheck %s
+; RUN: opt -mtriple=armeb-arm-eabi -mcpu=cortex-m0 < %s -arm-parallel-dsp -S | FileCheck %s --check-prefix=CHECK-UNSUPPORTED
 ;
 ; The Cortex-M0 does not support unaligned accesses:
 ; RUN: opt -mtriple=arm-arm-eabi -mcpu=cortex-m0 < %s -arm-parallel-dsp -S | FileCheck %s --check-prefix=CHECK-UNSUPPORTED
@@ -10,11 +11,11 @@ define dso_local i32 @OneReduction(i32 %arg, i32* nocapture readnone %arg1, i16*
 ;
 ; CHECK-LABEL: @OneReduction
 ; CHECK:  %mac1{{\.}}026 = phi i32 [ [[V8:%[0-9]+]], %for.body ], [ 0, %for.body.preheader ]
-; CHECK:  [[V4:%[0-9]+]] = bitcast i16* %arrayidx3 to i32*
+; CHECK:  [[V4:%[0-9]+]] = bitcast i16* %arrayidx to i32*
 ; CHECK:  [[V5:%[0-9]+]] = load i32, i32* [[V4]], align 2
-; CHECK:  [[V6:%[0-9]+]] = bitcast i16* %arrayidx to i32*
+; CHECK:  [[V6:%[0-9]+]] = bitcast i16* %arrayidx3 to i32*
 ; CHECK:  [[V7:%[0-9]+]] = load i32, i32* [[V6]], align 2
-; CHECK:  [[V8]] = call i32 @llvm.arm.smlad(i32 [[V5]], i32 [[V7]], i32 %mac1{{\.}}026)
+; CHECK:  [[V8]] = call i32 @llvm.arm.smlad(i32 [[V7]], i32 [[V5]], i32 %mac1{{\.}}026)
 ; CHECK-NOT: call i32 @llvm.arm.smlad
 ;
 ; CHECK-UNSUPPORTED-NOT:  call i32 @llvm.arm.smlad

@@ -66,6 +66,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
@@ -205,7 +206,7 @@ bool Lint::runOnFunction(Function &F) {
   AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
   AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
   DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-  TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
+  TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
   visit(F);
   dbgs() << MessagesStr.str();
   Messages.clear();
@@ -267,10 +268,14 @@ void Lint::visitCallSite(CallSite CS) {
         if (Formal->hasNoAliasAttr() && Actual->getType()->isPointerTy()) {
           AttributeList PAL = CS.getAttributes();
           unsigned ArgNo = 0;
-          for (CallSite::arg_iterator BI = CS.arg_begin(); BI != AE; ++BI) {
+          for (CallSite::arg_iterator BI = CS.arg_begin(); BI != AE;
+               ++BI, ++ArgNo) {
             // Skip ByVal arguments since they will be memcpy'd to the callee's
             // stack so we're not really passing the pointer anyway.
-            if (PAL.hasParamAttribute(ArgNo++, Attribute::ByVal))
+            if (PAL.hasParamAttribute(ArgNo, Attribute::ByVal))
+              continue;
+            // If both arguments are readonly, they have no dependence.
+            if (Formal->onlyReadsMemory() && CS.onlyReadsMemory(ArgNo))
               continue;
             if (AI != BI && (*BI)->getType()->isPointerTy()) {
               AliasResult Result = AA->alias(*AI, *BI);
@@ -337,6 +342,22 @@ void Lint::visitCallSite(CallSite CS) {
           Size = LocationSize::precise(Len->getValue().getZExtValue());
       Assert(AA->alias(MCI->getSource(), Size, MCI->getDest(), Size) !=
                  MustAlias,
+             "Undefined behavior: memcpy source and destination overlap", &I);
+      break;
+    }
+    case Intrinsic::memcpy_inline: {
+      MemCpyInlineInst *MCII = cast<MemCpyInlineInst>(&I);
+      const uint64_t Size = MCII->getLength()->getValue().getLimitedValue();
+      visitMemoryReference(I, MCII->getDest(), Size, MCII->getDestAlignment(),
+                           nullptr, MemRef::Write);
+      visitMemoryReference(I, MCII->getSource(), Size,
+                           MCII->getSourceAlignment(), nullptr, MemRef::Read);
+
+      // Check that the memcpy arguments don't overlap. The AliasAnalysis API
+      // isn't expressive enough for what we really want to do. Known partial
+      // overlap is not distinguished from the case where nothing is known.
+      const LocationSize LS = LocationSize::precise(Size);
+      Assert(AA->alias(MCII->getSource(), LS, MCII->getDest(), LS) != MustAlias,
              "Undefined behavior: memcpy source and destination overlap", &I);
       break;
     }
@@ -714,9 +735,9 @@ Value *Lint::findValueImpl(Value *V, bool OffsetOk,
     if (Value *W = SimplifyInstruction(Inst, {*DL, TLI, DT, AC}))
       return findValueImpl(W, OffsetOk, Visited);
   } else if (auto *C = dyn_cast<Constant>(V)) {
-    if (Value *W = ConstantFoldConstant(C, *DL, TLI))
-      if (W && W != V)
-        return findValueImpl(W, OffsetOk, Visited);
+    Value *W = ConstantFoldConstant(C, *DL, TLI);
+    if (W != V)
+      return findValueImpl(W, OffsetOk, Visited);
   }
 
   return V;

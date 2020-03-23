@@ -34,8 +34,11 @@
 #include "llvm/IR/Use.h"
 #include "llvm/IR/User.h"
 #include "llvm/IR/Value.h"
+#include "llvm/IR/ValueHandle.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -61,6 +64,11 @@ static cl::opt<bool> ForceSkipUniformRegions(
   cl::Hidden,
   cl::desc("Force whether the StructurizeCFG pass skips uniform regions"),
   cl::init(false));
+
+static cl::opt<bool>
+    RelaxedUniformRegions("structurizecfg-relaxed-uniform-regions", cl::Hidden,
+                          cl::desc("Allow relaxed uniform region checks"),
+                          cl::init(true));
 
 // Definition of the complex types used in this pass.
 
@@ -190,6 +198,7 @@ class StructurizeCFG : public RegionPass {
   SmallVector<RegionNode *, 8> Order;
   BBSet Visited;
 
+  SmallVector<WeakVH, 8> AffectedPhis;
   BBPhiMap DeletedPhis;
   BB2BBVecMap AddedPhis;
 
@@ -224,6 +233,8 @@ class StructurizeCFG : public RegionPass {
   void addPhiValues(BasicBlock *From, BasicBlock *To);
 
   void setPhiValues();
+
+  void simplifyAffectedPhis();
 
   void killTerminator(BasicBlock *BB);
 
@@ -578,9 +589,14 @@ void StructurizeCFG::insertConditions(bool Loops) {
 void StructurizeCFG::delPhiValues(BasicBlock *From, BasicBlock *To) {
   PhiMap &Map = DeletedPhis[To];
   for (PHINode &Phi : To->phis()) {
+    bool Recorded = false;
     while (Phi.getBasicBlockIndex(From) != -1) {
       Value *Deleted = Phi.removeIncomingValue(From, false);
       Map[&Phi].push_back(std::make_pair(From, Deleted));
+      if (!Recorded) {
+        AffectedPhis.push_back(&Phi);
+        Recorded = true;
+      }
     }
   }
 }
@@ -623,33 +639,31 @@ void StructurizeCFG::setPhiValues() {
       if (!Dominator.resultIsRememberedBlock())
         Updater.AddAvailableValue(Dominator.result(), Undef);
 
-      for (BasicBlock *FI : From) {
-        int Idx = Phi->getBasicBlockIndex(FI);
-        assert(Idx != -1);
-        Phi->setIncomingValue(Idx, Updater.GetValueAtEndOfBlock(FI));
-      }
+      for (BasicBlock *FI : From)
+        Phi->setIncomingValueForBlock(FI, Updater.GetValueAtEndOfBlock(FI));
+      AffectedPhis.push_back(Phi);
     }
 
     DeletedPhis.erase(To);
   }
   assert(DeletedPhis.empty());
 
-  // Simplify any phis inserted by the SSAUpdater if possible
+  AffectedPhis.append(InsertedPhis.begin(), InsertedPhis.end());
+}
+
+void StructurizeCFG::simplifyAffectedPhis() {
   bool Changed;
   do {
     Changed = false;
-
     SimplifyQuery Q(Func->getParent()->getDataLayout());
     Q.DT = DT;
-    for (size_t i = 0; i < InsertedPhis.size(); ++i) {
-      PHINode *Phi = InsertedPhis[i];
-      if (Value *V = SimplifyInstruction(Phi, Q)) {
-        Phi->replaceAllUsesWith(V);
-        Phi->eraseFromParent();
-        InsertedPhis[i] = InsertedPhis.back();
-        InsertedPhis.pop_back();
-        i--;
-        Changed = true;
+    for (WeakVH VH : AffectedPhis) {
+      if (auto Phi = dyn_cast_or_null<PHINode>(VH)) {
+        if (auto NewValue = SimplifyInstruction(Phi, Q)) {
+          Phi->replaceAllUsesWith(NewValue);
+          Phi->eraseFromParent();
+          Changed = true;
+        }
       }
     }
   } while (Changed);
@@ -882,6 +896,7 @@ void StructurizeCFG::createFlow() {
   BasicBlock *Exit = ParentRegion->getExit();
   bool EntryDominatesExit = DT->dominates(ParentRegion->getEntry(), Exit);
 
+  AffectedPhis.clear();
   DeletedPhis.clear();
   AddedPhis.clear();
   Conditions.clear();
@@ -936,6 +951,11 @@ void StructurizeCFG::rebuildSSA() {
 
 static bool hasOnlyUniformBranches(Region *R, unsigned UniformMDKindID,
                                    const LegacyDivergenceAnalysis &DA) {
+  // Bool for if all sub-regions are uniform.
+  bool SubRegionsAreUniform = true;
+  // Count of how many direct children are conditional.
+  unsigned ConditionalDirectChildren = 0;
+
   for (auto E : R->elements()) {
     if (!E->isSubRegion()) {
       auto Br = dyn_cast<BranchInst>(E->getEntry()->getTerminator());
@@ -944,6 +964,10 @@ static bool hasOnlyUniformBranches(Region *R, unsigned UniformMDKindID,
 
       if (!DA.isUniform(Br))
         return false;
+
+      // One of our direct children is conditional.
+      ConditionalDirectChildren++;
+
       LLVM_DEBUG(dbgs() << "BB: " << Br->getParent()->getName()
                         << " has uniform terminator\n");
     } else {
@@ -961,12 +985,25 @@ static bool hasOnlyUniformBranches(Region *R, unsigned UniformMDKindID,
         if (!Br || !Br->isConditional())
           continue;
 
-        if (!Br->getMetadata(UniformMDKindID))
-          return false;
+        if (!Br->getMetadata(UniformMDKindID)) {
+          // Early exit if we cannot have relaxed uniform regions.
+          if (!RelaxedUniformRegions)
+            return false;
+
+          SubRegionsAreUniform = false;
+          break;
+        }
       }
     }
   }
-  return true;
+
+  // Our region is uniform if:
+  // 1. All conditional branches that are direct children are uniform (checked
+  // above).
+  // 2. And either:
+  //   a. All sub-regions are uniform.
+  //   b. There is one or less conditional branches among the direct children.
+  return SubRegionsAreUniform || (ConditionalDirectChildren <= 1);
 }
 
 /// Run the transformation for each region found
@@ -1018,6 +1055,7 @@ bool StructurizeCFG::runOnRegion(Region *R, RGPassManager &RGM) {
   insertConditions(false);
   insertConditions(true);
   setPhiValues();
+  simplifyAffectedPhis();
   rebuildSSA();
 
   // Cleanup

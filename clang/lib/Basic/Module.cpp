@@ -44,7 +44,7 @@ Module::Module(StringRef Name, SourceLocation DefinitionLoc, Module *Parent,
       InferSubmodules(false), InferExplicitSubmodules(false),
       InferExportWildcard(false), ConfigMacrosExhaustive(false),
       NoUndeclaredIncludes(false), ModuleMapIsPrivate(false),
-      NameVisibility(Hidden) {
+      HasUmbrellaDir(false), NameVisibility(Hidden) {
   if (Parent) {
     if (!Parent->isAvailable())
       IsAvailable = false;
@@ -239,15 +239,20 @@ Module::DirectoryName Module::getUmbrellaDir() const {
   if (Header U = getUmbrellaHeader())
     return {"", U.Entry->getDir()};
 
-  return {UmbrellaAsWritten, Umbrella.dyn_cast<const DirectoryEntry *>()};
+  return {UmbrellaAsWritten, static_cast<const DirectoryEntry *>(Umbrella)};
+}
+
+void Module::addTopHeader(const FileEntry *File) {
+  assert(File);
+  TopHeaders.insert(File);
 }
 
 ArrayRef<const FileEntry *> Module::getTopHeaders(FileManager &FileMgr) {
   if (!TopHeaderNames.empty()) {
     for (std::vector<std::string>::iterator
            I = TopHeaderNames.begin(), E = TopHeaderNames.end(); I != E; ++I) {
-      if (const FileEntry *FE = FileMgr.getFile(*I))
-        TopHeaders.insert(FE);
+      if (auto FE = FileMgr.getFile(*I))
+        TopHeaders.insert(*FE);
     }
     TopHeaderNames.clear();
   }
@@ -276,7 +281,7 @@ bool Module::directlyUses(const Module *Requested) const {
 void Module::addRequirement(StringRef Feature, bool RequiredState,
                             const LangOptions &LangOpts,
                             const TargetInfo &Target) {
-  Requirements.push_back(Requirement(Feature, RequiredState));
+  Requirements.push_back(Requirement(std::string(Feature), RequiredState));
 
   // If this feature is currently available, we're done.
   if (hasFeature(Feature, LangOpts, Target) == RequiredState)
@@ -319,6 +324,21 @@ Module *Module::findSubmodule(StringRef Name) const {
     return nullptr;
 
   return SubModules[Pos->getValue()];
+}
+
+Module *Module::findOrInferSubmodule(StringRef Name) {
+  llvm::StringMap<unsigned>::const_iterator Pos = SubModuleIndex.find(Name);
+  if (Pos != SubModuleIndex.end())
+    return SubModules[Pos->getValue()];
+  if (!InferSubmodules)
+    return nullptr;
+  Module *Result = new Module(Name, SourceLocation(), this, false, InferExplicitSubmodules, 0);
+  Result->InferExplicitSubmodules = InferExplicitSubmodules;
+  Result->InferSubmodules = InferSubmodules;
+  Result->InferExportWildcard = InferExportWildcard;
+  if (Result->InferExportWildcard)
+    Result->Exports.push_back(Module::ExportDecl(nullptr, true));
+  return Result;
 }
 
 void Module::getExportedModules(SmallVectorImpl<Module *> &Exported) const {
@@ -637,4 +657,19 @@ void VisibleModuleSet::setVisible(Module *M, SourceLocation Loc,
     }
   };
   VisitModule({M, nullptr});
+}
+
+ASTSourceDescriptor::ASTSourceDescriptor(const Module &M)
+    : Signature(M.Signature), ClangModule(&M) {
+  if (M.Directory)
+    Path = M.Directory->getName();
+  if (auto *File = M.getASTFile())
+    ASTFile = File->getName();
+}
+
+std::string ASTSourceDescriptor::getModuleName() const {
+  if (ClangModule)
+    return ClangModule->Name;
+  else
+    return std::string(PCHModuleName);
 }

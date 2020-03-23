@@ -41,12 +41,14 @@ class LibcxxTestFormat(object):
         self.exec_env = dict(exec_env)
 
     @staticmethod
-    def _make_custom_parsers():
+    def _make_custom_parsers(test):
         return [
             IntegratedTestKeywordParser('FLAKY_TEST.', ParserKind.TAG,
                                         initial_value=False),
             IntegratedTestKeywordParser('MODULES_DEFINES:', ParserKind.LIST,
-                                        initial_value=[])
+                                        initial_value=[]),
+            IntegratedTestKeywordParser('FILE_DEPENDENCIES:', ParserKind.LIST,
+                                        initial_value=test.file_dependencies)
         ]
 
     @staticmethod
@@ -102,9 +104,13 @@ class LibcxxTestFormat(object):
            'objective-c++' in test.config.available_features:
             return (lit.Test.UNSUPPORTED, "Objective-C++ is not supported")
 
-        parsers = self._make_custom_parsers()
+        setattr(test, 'file_dependencies', [])
+        parsers = self._make_custom_parsers(test)
         script = lit.TestRunner.parseIntegratedTestScript(
             test, additional_parsers=parsers, require_script=is_sh_test)
+
+        local_cwd = os.path.dirname(test.getSourcePath())
+        data_files = [os.path.join(local_cwd, f) for f in test.file_dependencies]
         # Check if a result for the test was returned. If so return that
         # result.
         if isinstance(script, lit.Test.Result):
@@ -119,6 +125,7 @@ class LibcxxTestFormat(object):
         tmpDir, tmpBase = lit.TestRunner.getTempPaths(test)
         substitutions = lit.TestRunner.getDefaultSubstitutions(test, tmpDir,
                                                                tmpBase)
+        substitutions.append(('%file_dependencies', ' '.join(data_files)))
         script = lit.TestRunner.applySubstitutions(script, substitutions)
 
         test_cxx = copy.deepcopy(self.cxx)
@@ -135,9 +142,9 @@ class LibcxxTestFormat(object):
             # If we see this we need to build the test against uniquely built
             # modules.
             if is_libcxx_test:
-                with open(test.getSourcePath(), 'r') as f:
+                with open(test.getSourcePath(), 'rb') as f:
                     contents = f.read()
-                if '#define _LIBCPP_ASSERT' in contents:
+                if b'#define _LIBCPP_ASSERT' in contents:
                     test_cxx.useModules(False)
 
         if is_objcxx_test:
@@ -154,7 +161,7 @@ class LibcxxTestFormat(object):
                 # We can't run ShTest tests with a executor yet.
                 # For now, bail on trying to run them
                 return lit.Test.UNSUPPORTED, 'ShTest format not yet supported'
-            test.config.environment = dict(self.exec_env)
+            test.config.environment = self.executor.merge_environments(os.environ, self.exec_env)
             return lit.TestRunner._runShTest(test, lit_config,
                                              self.execute_external, script,
                                              tmpBase)
@@ -162,7 +169,7 @@ class LibcxxTestFormat(object):
             return self._evaluate_fail_test(test, test_cxx, parsers)
         elif is_pass_test:
             return self._evaluate_pass_test(test, tmpBase, lit_config,
-                                            test_cxx, parsers)
+                                            test_cxx, parsers, data_files)
         else:
             # No other test type is supported
             assert False
@@ -171,7 +178,7 @@ class LibcxxTestFormat(object):
         libcxx.util.cleanFile(exec_path)
 
     def _evaluate_pass_test(self, test, tmpBase, lit_config,
-                            test_cxx, parsers):
+                            test_cxx, parsers, data_files):
         execDir = os.path.dirname(test.getExecPath())
         source_path = test.getSourcePath()
         exec_path = tmpBase + '.exe'
@@ -193,12 +200,6 @@ class LibcxxTestFormat(object):
             env = None
             if self.exec_env:
                 env = self.exec_env
-            # TODO: Only list actually needed files in file_deps.
-            # Right now we just mark all of the .dat files in the same
-            # directory as dependencies, but it's likely less than that. We
-            # should add a `// FILE-DEP: foo.dat` to each test to track this.
-            data_files = [os.path.join(local_cwd, f)
-                          for f in os.listdir(local_cwd) if f.endswith('.dat')]
             is_flaky = self._get_parser('FLAKY_TEST.', parsers).getValue()
             max_retry = 3 if is_flaky else 1
             for retry_count in range(max_retry):
@@ -224,10 +225,11 @@ class LibcxxTestFormat(object):
     def _evaluate_fail_test(self, test, test_cxx, parsers):
         source_path = test.getSourcePath()
         # FIXME: lift this detection into LLVM/LIT.
-        with open(source_path, 'r') as f:
+        with open(source_path, 'rb') as f:
             contents = f.read()
-        verify_tags = ['expected-note', 'expected-remark', 'expected-warning',
-                       'expected-error', 'expected-no-diagnostics']
+        verify_tags = [b'expected-note', b'expected-remark',
+                       b'expected-warning', b'expected-error',
+                       b'expected-no-diagnostics']
         use_verify = self.use_verify_for_fail and \
                      any([tag in contents for tag in verify_tags])
         # FIXME(EricWF): GCC 5 does not evaluate static assertions that
@@ -249,13 +251,14 @@ class LibcxxTestFormat(object):
             #
             # Therefore, we check if the test was expected to fail because of
             # nodiscard before enabling it
-            test_str_list = ['ignoring return value', 'nodiscard', 'NODISCARD']
+            test_str_list = [b'ignoring return value', b'nodiscard',
+                             b'NODISCARD']
             if any(test_str in contents for test_str in test_str_list):
                 test_cxx.flags += ['-Werror=unused-result']
         cmd, out, err, rc = test_cxx.compile(source_path, out=os.devnull)
-        expected_rc = 0 if use_verify else 1
+        check_rc = lambda rc: rc == 0 if use_verify else rc != 0
         report = libcxx.util.makeReport(cmd, out, err, rc)
-        if rc == expected_rc:
+        if check_rc(rc):
             return lit.Test.Result(lit.Test.PASS, report)
         else:
             report += ('Expected compilation to fail!\n' if not use_verify else

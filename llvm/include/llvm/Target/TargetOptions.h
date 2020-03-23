@@ -16,8 +16,11 @@
 
 #include "llvm/MC/MCTargetOptions.h"
 
+#include <memory>
+
 namespace llvm {
   class MachineFunction;
+  class MemoryBuffer;
   class Module;
 
   namespace FloatABI {
@@ -63,6 +66,18 @@ namespace llvm {
     };
   }
 
+  enum class BasicBlockSection {
+    All,    // Use Basic Block Sections for all basic blocks.  A section
+            // for every basic block can significantly bloat object file sizes.
+    List,   // Get list of functions & BBs from a file. Selectively enables
+            // basic block sections for a subset of basic blocks which can be
+            // used to control object size bloats from creating sections.
+    Labels, // Do not use Basic Block Sections but label basic blocks.  This
+            // is useful when associating profile counts from virtual addresses
+            // to basic blocks.
+    None    // Do not use Basic Block Sections.
+  };
+
   enum class EABI {
     Unknown,
     Default, // Default means not specified
@@ -107,18 +122,20 @@ namespace llvm {
   public:
     TargetOptions()
         : PrintMachineCode(false), UnsafeFPMath(false), NoInfsFPMath(false),
-          NoNaNsFPMath(false), NoTrappingFPMath(false),
+          NoNaNsFPMath(false), NoTrappingFPMath(true),
           NoSignedZerosFPMath(false),
           HonorSignDependentRoundingFPMathOption(false), NoZerosInBSS(false),
           GuaranteedTailCallOpt(false), StackSymbolOrdering(true),
           EnableFastISel(false), EnableGlobalISel(false), UseInitArray(false),
           DisableIntegratedAS(false), RelaxELFRelocations(false),
           FunctionSections(false), DataSections(false),
-          UniqueSectionNames(true), TrapUnreachable(false),
-          NoTrapAfterNoreturn(false), EmulatedTLS(false),
-          ExplicitEmulatedTLS(false), EnableIPRA(false),
+          UniqueSectionNames(true), UniqueBBSectionNames(false),
+          TrapUnreachable(false), NoTrapAfterNoreturn(false), TLSSize(0),
+          EmulatedTLS(false), ExplicitEmulatedTLS(false), EnableIPRA(false),
           EmitStackSizeSection(false), EnableMachineOutliner(false),
-          SupportsDefaultOutlining(false), EmitAddrsig(false) {}
+          SupportsDefaultOutlining(false), EmitAddrsig(false),
+          EmitCallSiteInfo(false), SupportsDebugEntryValues(false),
+          EnableDebugEntryValues(false), ForceDwarfFrameSection(false) {}
 
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
     /// option is specified on the command line, and should enable debugging
@@ -223,12 +240,18 @@ namespace llvm {
 
     unsigned UniqueSectionNames : 1;
 
+    /// Use unique names for basic block sections.
+    unsigned UniqueBBSectionNames : 1;
+
     /// Emit target-specific trap instruction for 'unreachable' IR instructions.
     unsigned TrapUnreachable : 1;
 
     /// Do not emit a trap instruction for 'unreachable' IR instructions behind
     /// noreturn calls, even if TrapUnreachable is true.
     unsigned NoTrapAfterNoreturn : 1;
+
+    /// Bit size of immediate TLS offsets (0 == use the default).
+    unsigned TLSSize : 8;
 
     /// EmulatedTLS - This flag enables emulated TLS model, using emutls
     /// function in the runtime library..
@@ -251,6 +274,31 @@ namespace llvm {
 
     /// Emit address-significance table.
     unsigned EmitAddrsig : 1;
+
+    /// Emit basic blocks into separate sections.
+    BasicBlockSection BBSections = BasicBlockSection::None;
+
+    /// Memory Buffer that contains information on sampled basic blocks and used
+    /// to selectively generate basic block sections.
+    std::shared_ptr<MemoryBuffer> BBSectionsFuncListBuf;
+
+    /// The flag enables call site info production. It is used only for debug
+    /// info, and it is restricted only to optimized code. This can be used for
+    /// something else, so that should be controlled in the frontend.
+    unsigned EmitCallSiteInfo : 1;
+    /// Set if the target supports the debug entry values by default.
+    unsigned SupportsDebugEntryValues : 1;
+    /// When set to true, the EnableDebugEntryValues option forces production
+    /// of debug entry values even if the target does not officially support
+    /// it. Useful for testing purposes only. This flag should never be checked
+    /// directly, always use \ref ShouldEmitDebugEntryValues instead.
+     unsigned EnableDebugEntryValues : 1;
+    /// NOTE: There are targets that still do not support the debug entry values
+    /// production.
+    bool ShouldEmitDebugEntryValues() const;
+
+    /// Emit DWARF debug frame section.
+    unsigned ForceDwarfFrameSection : 1;
 
     /// FloatABIType - This setting is set by -float-abi=xxx option is specfied
     /// on the command line. This setting may either be Default, Soft, or Hard.

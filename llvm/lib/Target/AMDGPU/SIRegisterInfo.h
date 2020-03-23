@@ -14,7 +14,9 @@
 #ifndef LLVM_LIB_TARGET_AMDGPU_SIREGISTERINFO_H
 #define LLVM_LIB_TARGET_AMDGPU_SIREGISTERINFO_H
 
-#include "AMDGPURegisterInfo.h"
+#define GET_REGINFO_HEADER
+#include "AMDGPUGenRegisterInfo.inc"
+
 #include "SIDefines.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 
@@ -25,38 +27,28 @@ class LiveIntervals;
 class MachineRegisterInfo;
 class SIMachineFunctionInfo;
 
-class SIRegisterInfo final : public AMDGPURegisterInfo {
+class SIRegisterInfo final : public AMDGPUGenRegisterInfo {
 private:
-  unsigned SGPRSetID;
-  unsigned VGPRSetID;
-  BitVector SGPRPressureSets;
-  BitVector VGPRPressureSets;
+  const GCNSubtarget &ST;
   bool SpillSGPRToVGPR;
-  bool SpillSGPRToSMEM;
+  bool isWave32;
 
-  void classifyPressureSet(unsigned PSetID, unsigned Reg,
-                           BitVector &PressureSets) const;
+  void reserveRegisterTuples(BitVector &, unsigned Reg) const;
+
 public:
   SIRegisterInfo(const GCNSubtarget &ST);
+
+  /// \returns the sub reg enum value for the given \p Channel
+  /// (e.g. getSubRegFromChannel(0) -> AMDGPU::sub0)
+  static unsigned getSubRegFromChannel(unsigned Channel, unsigned NumRegs = 1);
 
   bool spillSGPRToVGPR() const {
     return SpillSGPRToVGPR;
   }
 
-  bool spillSGPRToSMEM() const {
-    return SpillSGPRToSMEM;
-  }
-
   /// Return the end register initially reserved for the scratch buffer in case
   /// spilling is needed.
   unsigned reservedPrivateSegmentBufferReg(const MachineFunction &MF) const;
-
-  /// Return the end register initially reserved for the scratch wave offset in
-  /// case spilling is needed.
-  unsigned reservedPrivateSegmentWaveByteOffsetReg(
-    const MachineFunction &MF) const;
-
-  unsigned reservedStackPtrOffsetReg(const MachineFunction &MF) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const override;
 
@@ -71,15 +63,15 @@ public:
     return 100;
   }
 
-  unsigned getFrameRegister(const MachineFunction &MF) const override;
+  Register getFrameRegister(const MachineFunction &MF) const override;
 
+  bool canRealignStack(const MachineFunction &MF) const override;
   bool requiresRegisterScavenging(const MachineFunction &Fn) const override;
 
   bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
   bool requiresFrameIndexReplacementScavenging(
     const MachineFunction &MF) const override;
   bool requiresVirtualBaseRegisters(const MachineFunction &Fn) const override;
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const override;
 
   int64_t getMUBUFInstrOffset(const MachineInstr *MI) const;
 
@@ -129,7 +121,7 @@ public:
 
   /// \returns true if this class contains only SGPR registers
   bool isSGPRClass(const TargetRegisterClass *RC) const {
-    return !hasVGPRs(RC);
+    return !hasVGPRs(RC) && !hasAGPRs(RC);
   }
 
   /// \returns true if this class ID contains only SGPR registers
@@ -139,18 +131,35 @@ public:
 
   bool isSGPRReg(const MachineRegisterInfo &MRI, unsigned Reg) const {
     const TargetRegisterClass *RC;
-    if (TargetRegisterInfo::isVirtualRegister(Reg))
+    if (Register::isVirtualRegister(Reg))
       RC = MRI.getRegClass(Reg);
     else
       RC = getPhysRegClass(Reg);
     return isSGPRClass(RC);
   }
 
+  /// \returns true if this class contains only AGPR registers
+  bool isAGPRClass(const TargetRegisterClass *RC) const {
+    return hasAGPRs(RC) && !hasVGPRs(RC);
+  }
+
   /// \returns true if this class contains VGPR registers.
   bool hasVGPRs(const TargetRegisterClass *RC) const;
 
+  /// \returns true if this class contains AGPR registers.
+  bool hasAGPRs(const TargetRegisterClass *RC) const;
+
+  /// \returns true if this class contains any vector registers.
+  bool hasVectorRegisters(const TargetRegisterClass *RC) const {
+    return hasVGPRs(RC) || hasAGPRs(RC);
+  }
+
   /// \returns A VGPR reg class with the same width as \p SRC
   const TargetRegisterClass *getEquivalentVGPRClass(
+                                          const TargetRegisterClass *SRC) const;
+
+  /// \returns An AGPR reg class with the same width as \p SRC
+  const TargetRegisterClass *getEquivalentAGPRClass(
                                           const TargetRegisterClass *SRC) const;
 
   /// \returns A SGPR reg class with the same width as \p SRC
@@ -179,27 +188,23 @@ public:
   /// \returns True if operands defined with this operand type can accept
   /// an inline constant. i.e. An integer value in the range (-16, 64) or
   /// -4.0f, -2.0f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 2.0f, 4.0f.
-  bool opCanUseInlineConstant(unsigned OpType) const {
-    return OpType >= AMDGPU::OPERAND_SRC_FIRST &&
-           OpType <= AMDGPU::OPERAND_SRC_LAST;
-  }
+  bool opCanUseInlineConstant(unsigned OpType) const;
 
   unsigned findUnusedRegister(const MachineRegisterInfo &MRI,
                               const TargetRegisterClass *RC,
                               const MachineFunction &MF) const;
 
-  unsigned getSGPRPressureSet() const { return SGPRSetID; };
-  unsigned getVGPRPressureSet() const { return VGPRSetID; };
-
   const TargetRegisterClass *getRegClassForReg(const MachineRegisterInfo &MRI,
                                                unsigned Reg) const;
   bool isVGPR(const MachineRegisterInfo &MRI, unsigned Reg) const;
-
-  bool isSGPRPressureSet(unsigned SetID) const {
-    return SGPRPressureSets.test(SetID) && !VGPRPressureSets.test(SetID);
+  bool isAGPR(const MachineRegisterInfo &MRI, unsigned Reg) const;
+  bool isVectorRegister(const MachineRegisterInfo &MRI, unsigned Reg) const {
+    return isVGPR(MRI, Reg) || isAGPR(MRI, Reg);
   }
-  bool isVGPRPressureSet(unsigned SetID) const {
-    return VGPRPressureSets.test(SetID) && !SGPRPressureSets.test(SetID);
+
+  virtual bool
+  isDivergentRegClass(const TargetRegisterClass *RC) const override {
+    return !isSGPRClass(RC);
   }
 
   ArrayRef<int16_t> getRegSplitParts(const TargetRegisterClass *RC,
@@ -224,14 +229,58 @@ public:
   unsigned getReturnAddressReg(const MachineFunction &MF) const;
 
   const TargetRegisterClass *
+  getRegClassForSizeOnBank(unsigned Size,
+                           const RegisterBank &Bank,
+                           const MachineRegisterInfo &MRI) const;
+
+  const TargetRegisterClass *
+  getRegClassForTypeOnBank(LLT Ty,
+                           const RegisterBank &Bank,
+                           const MachineRegisterInfo &MRI) const {
+    return getRegClassForSizeOnBank(Ty.getSizeInBits(), Bank, MRI);
+  }
+
+  const TargetRegisterClass *
   getConstrainedRegClassForOperand(const MachineOperand &MO,
                                  const MachineRegisterInfo &MRI) const override;
+
+  const TargetRegisterClass *getBoolRC() const {
+    return isWave32 ? &AMDGPU::SReg_32RegClass
+                    : &AMDGPU::SReg_64RegClass;
+  }
+
+  const TargetRegisterClass *getWaveMaskRegClass() const {
+    return isWave32 ? &AMDGPU::SReg_32_XM0_XEXECRegClass
+                    : &AMDGPU::SReg_64_XEXECRegClass;
+  }
+
+  unsigned getVCC() const;
+
+  const TargetRegisterClass *getRegClass(unsigned RCID) const;
 
   // Find reaching register definition
   MachineInstr *findReachingDef(unsigned Reg, unsigned SubReg,
                                 MachineInstr &Use,
                                 MachineRegisterInfo &MRI,
                                 LiveIntervals *LIS) const;
+
+  const uint32_t *getAllVGPRRegMask() const;
+  const uint32_t *getAllAllocatableSRegMask() const;
+
+  // \returns number of 32 bit registers covered by a \p LM
+  static unsigned getNumCoveredRegs(LaneBitmask LM) {
+    return LM.getNumLanes();
+  }
+
+  // \returns a DWORD offset of a \p SubReg
+  unsigned getChannelFromSubReg(unsigned SubReg) const {
+    return SubReg ? alignTo(getSubRegIdxOffset(SubReg), 32) / 32 : 0;
+  }
+
+  // \returns a DWORD size of a \p SubReg
+  unsigned getNumChannelsFromSubReg(unsigned SubReg) const {
+    return getNumCoveredRegs(getSubRegIndexLaneMask(SubReg));
+  }
 
 private:
   void buildSpillLoadStore(MachineBasicBlock::iterator MI,

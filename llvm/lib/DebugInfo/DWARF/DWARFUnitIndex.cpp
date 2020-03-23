@@ -18,7 +18,7 @@
 using namespace llvm;
 
 bool DWARFUnitIndex::Header::parse(DataExtractor IndexData,
-                                   uint32_t *OffsetPtr) {
+                                   uint64_t *OffsetPtr) {
   if (!IndexData.isValidOffsetForDataOfSize(*OffsetPtr, 16))
     return false;
   Version = IndexData.getU32(OffsetPtr);
@@ -45,7 +45,7 @@ bool DWARFUnitIndex::parse(DataExtractor IndexData) {
 }
 
 bool DWARFUnitIndex::parseImpl(DataExtractor IndexData) {
-  uint32_t Offset = 0;
+  uint64_t Offset = 0;
   if (!Header.parse(IndexData, &Offset))
     return false;
 
@@ -54,10 +54,10 @@ bool DWARFUnitIndex::parseImpl(DataExtractor IndexData) {
                       (2 * Header.NumUnits + 1) * 4 * Header.NumColumns))
     return false;
 
-  Rows = llvm::make_unique<Entry[]>(Header.NumBuckets);
+  Rows = std::make_unique<Entry[]>(Header.NumBuckets);
   auto Contribs =
-      llvm::make_unique<Entry::SectionContribution *[]>(Header.NumUnits);
-  ColumnKinds = llvm::make_unique<DWARFSectionKind[]>(Header.NumColumns);
+      std::make_unique<Entry::SectionContribution *[]>(Header.NumUnits);
+  ColumnKinds = std::make_unique<DWARFSectionKind[]>(Header.NumColumns);
 
   // Read Hash Table of Signatures
   for (unsigned i = 0; i != Header.NumBuckets; ++i)
@@ -70,7 +70,7 @@ bool DWARFUnitIndex::parseImpl(DataExtractor IndexData) {
       continue;
     Rows[i].Index = this;
     Rows[i].Contributions =
-        llvm::make_unique<Entry::SectionContribution[]>(Header.NumColumns);
+        std::make_unique<Entry::SectionContribution[]>(Header.NumColumns);
     Contribs[Index - 1] = Rows[i].Contributions.get();
   }
 
@@ -118,7 +118,7 @@ StringRef DWARFUnitIndex::getColumnHeader(DWARFSectionKind DS) {
     CASE(MACINFO);
     CASE(MACRO);
   }
-  llvm_unreachable("unknown DWARFSectionKind");
+  return StringRef();
 }
 
 void DWARFUnitIndex::dump(raw_ostream &OS) const {
@@ -127,8 +127,14 @@ void DWARFUnitIndex::dump(raw_ostream &OS) const {
 
   Header.dump(OS);
   OS << "Index Signature         ";
-  for (unsigned i = 0; i != Header.NumColumns; ++i)
-    OS << ' ' << left_justify(getColumnHeader(ColumnKinds[i]), 24);
+  for (unsigned i = 0; i != Header.NumColumns; ++i) {
+    DWARFSectionKind Kind = ColumnKinds[i];
+    StringRef Name = getColumnHeader(Kind);
+    if (!Name.empty())
+      OS << ' ' << left_justify(Name, 24);
+    else
+      OS << format(" Unknown: %-15u", static_cast<unsigned>(Kind));
+  }
   OS << "\n----- ------------------";
   for (unsigned i = 0; i != Header.NumColumns; ++i)
     OS << " ------------------------";
@@ -172,10 +178,9 @@ DWARFUnitIndex::getFromOffset(uint32_t Offset) const {
              E2->Contributions[InfoColumn].Offset;
     });
   }
-  auto I =
-      llvm::upper_bound(OffsetLookup, Offset, [&](uint32_t Offset, Entry *E2) {
-        return Offset < E2->Contributions[InfoColumn].Offset;
-      });
+  auto I = partition_point(OffsetLookup, [&](Entry *E2) {
+    return E2->Contributions[InfoColumn].Offset <= Offset;
+  });
   if (I == OffsetLookup.begin())
     return nullptr;
   --I;

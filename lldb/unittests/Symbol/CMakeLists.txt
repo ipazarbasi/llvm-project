@@ -1,19 +1,25 @@
 add_lldb_unittest(SymbolTests
   LocateSymbolFileTest.cpp
-  TestClangASTContext.cpp
+  PostfixExpressionTest.cpp
+  TestTypeSystemClang.cpp
+  TestClangASTImporter.cpp
   TestDWARFCallFrameInfo.cpp
   TestType.cpp
+  TestLineEntry.cpp
 
   LINK_LIBS
     lldbHost
     lldbSymbol
     lldbUtilityHelpers
     lldbPluginObjectFileELF
+    lldbPluginObjectFileMachO
+    lldbPluginSymbolFileDWARF
+    lldbPluginSymbolFileSymtab
+    lldbPluginTypeSystemClang
+    LLVMTestingSupport
   )
 
-add_dependencies(SymbolTests yaml2obj)
-add_definitions(-DYAML2OBJ="$<TARGET_FILE:yaml2obj>")
 set(test_inputs
-  basic-call-frame-info.yaml
+  inlined-functions.yaml
   )
 add_unittest_inputs(SymbolTests "${test_inputs}")

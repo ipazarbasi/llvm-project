@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBBlock_h_
-#define LLDB_SBBlock_h_
+#ifndef LLDB_API_SBBLOCK_H
+#define LLDB_API_SBBLOCK_H
 
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBFrame.h"
@@ -60,7 +60,6 @@ public:
 
   lldb::SBValueList GetVariables(lldb::SBTarget &target, bool arguments,
                                  bool locals, bool statics);
-  //------------------------------------------------------------------
   /// Get the inlined block that contains this block.
   ///
   /// \return
@@ -69,7 +68,6 @@ public:
   ///     block and are themselves inlined. An invalid SBBlock will
   ///     be returned if this block nor any parent blocks are inlined
   ///     function blocks.
-  //------------------------------------------------------------------
   lldb::SBBlock GetContainingInlinedBlock();
 
   bool GetDescription(lldb::SBStream &description);
@@ -94,4 +92,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_SBBlock_h_
+#endif // LLDB_API_SBBLOCK_H

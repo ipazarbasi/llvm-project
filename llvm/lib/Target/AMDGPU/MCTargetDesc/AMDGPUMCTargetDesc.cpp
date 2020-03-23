@@ -13,10 +13,11 @@
 
 #include "AMDGPUMCTargetDesc.h"
 #include "AMDGPUELFStreamer.h"
+#include "AMDGPUInstPrinter.h"
 #include "AMDGPUMCAsmInfo.h"
 #include "AMDGPUTargetStreamer.h"
-#include "InstPrinter/AMDGPUInstPrinter.h"
 #include "SIDefines.h"
+#include "TargetInfo/AMDGPUTargetInfo.h"
 #include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -60,7 +61,13 @@ static MCRegisterInfo *createAMDGPUMCRegisterInfo(const Triple &TT) {
   if (TT.getArch() == Triple::r600)
     InitR600MCRegisterInfo(X, 0);
   else
-    InitAMDGPUMCRegisterInfo(X, 0);
+    InitAMDGPUMCRegisterInfo(X, AMDGPU::PC_REG);
+  return X;
+}
+
+MCRegisterInfo *llvm::createGCNMCRegisterInfo(AMDGPUDwarfFlavour DwarfFlavour) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitAMDGPUMCRegisterInfo(X, AMDGPU::PC_REG, DwarfFlavour);
   return X;
 }
 
@@ -133,7 +140,7 @@ static MCInstrAnalysis *createAMDGPUMCInstrAnalysis(const MCInstrInfo *Info) {
   return new AMDGPUMCInstrAnalysis(Info);
 }
 
-extern "C" void LLVMInitializeAMDGPUTargetMC() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAMDGPUTargetMC() {
 
   TargetRegistry::RegisterMCInstrInfo(getTheGCNTarget(), createAMDGPUMCInstrInfo);
   TargetRegistry::RegisterMCInstrInfo(getTheAMDGPUTarget(), createR600MCInstrInfo);

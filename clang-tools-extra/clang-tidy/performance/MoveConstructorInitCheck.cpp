@@ -27,11 +27,6 @@ MoveConstructorInitCheck::MoveConstructorInitCheck(StringRef Name,
           Options.getLocalOrGlobal("IncludeStyle", "llvm"))) {}
 
 void MoveConstructorInitCheck::registerMatchers(MatchFinder *Finder) {
-  // Only register the matchers for C++11; the functionality currently does not
-  // provide any benefit to other languages, despite being benign.
-  if (!getLangOpts().CPlusPlus11)
-    return;
-
   Finder->addMatcher(
       cxxConstructorDecl(
           unless(isImplicit()), isMoveConstructor(),
@@ -91,10 +86,11 @@ void MoveConstructorInitCheck::check(const MatchFinder::MatchResult &Result) {
   }
 }
 
-void MoveConstructorInitCheck::registerPPCallbacks(CompilerInstance &Compiler) {
-  Inserter.reset(new utils::IncludeInserter(
-      Compiler.getSourceManager(), Compiler.getLangOpts(), IncludeStyle));
-  Compiler.getPreprocessor().addPPCallbacks(Inserter->CreatePPCallbacks());
+void MoveConstructorInitCheck::registerPPCallbacks(
+    const SourceManager &SM, Preprocessor *PP, Preprocessor *ModuleExpanderPP) {
+  Inserter = std::make_unique<utils::IncludeInserter>(SM, getLangOpts(),
+                                                       IncludeStyle);
+  PP->addPPCallbacks(Inserter->CreatePPCallbacks());
 }
 
 void MoveConstructorInitCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {

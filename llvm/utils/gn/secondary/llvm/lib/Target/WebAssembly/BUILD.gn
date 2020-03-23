@@ -44,7 +44,6 @@ static_library("LLVMWebAssemblyCodeGen") {
     ":WebAssemblyGenGlobalISel",
     ":WebAssemblyGenMCPseudoLowering",
     ":WebAssemblyGenRegisterBank",
-    "InstPrinter",
     "MCTargetDesc",
     "TargetInfo",
     "//llvm/include/llvm/Config:llvm-config",
@@ -65,7 +64,6 @@ static_library("LLVMWebAssemblyCodeGen") {
     "WebAssemblyAsmPrinter.cpp",
     "WebAssemblyCFGSort.cpp",
     "WebAssemblyCFGStackify.cpp",
-    "WebAssemblyCallIndirectFixup.cpp",
     "WebAssemblyDebugValueManager.cpp",
     "WebAssemblyExceptionInfo.cpp",
     "WebAssemblyExplicitLocals.cpp",
@@ -114,7 +112,6 @@ group("WebAssembly") {
     ":LLVMWebAssemblyCodeGen",
     "AsmParser",
     "Disassembler",
-    "InstPrinter",
     "MCTargetDesc",
     "TargetInfo",
   ]

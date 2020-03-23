@@ -52,11 +52,11 @@ def dump_memory(base_addr, data, num_per_line, outfile):
 
 def read_packet(f, verbose=False, trace_file=None):
     '''Decode a JSON packet that starts with the content length and is
-       followed by the JSON bytes from a file 'f'
+       followed by the JSON bytes from a file 'f'. Returns None on EOF.
     '''
     line = f.readline().decode("utf-8")
     if len(line) == 0:
-        return None
+        return None  # EOF.
 
     # Watch for line that starts with the prefix
     prefix = 'Content-Length: '
@@ -91,15 +91,15 @@ def read_packet_thread(vs_comm):
     done = False
     while not done:
         packet = read_packet(vs_comm.recv, trace_file=vs_comm.trace_file)
-        if packet:
-            done = not vs_comm.handle_recv_packet(packet)
-        else:
-            done = True
+        # `packet` will be `None` on EOF. We want to pass it down to
+        # handle_recv_packet anyway so the main thread can handle unexpected
+        # termination of lldb-vscode and stop waiting for new packets.
+        done = not vs_comm.handle_recv_packet(packet)
 
 
 class DebugCommunication(object):
 
-    def __init__(self, recv, send):
+    def __init__(self, recv, send, init_commands):
         self.trace_file = None
         self.send = send
         self.recv = recv
@@ -111,6 +111,7 @@ class DebugCommunication(object):
         self.exit_status = None
         self.initialize_body = None
         self.thread_stop_reasons = {}
+        self.breakpoint_events = []
         self.sequence = 1
         self.threads = None
         self.recv_thread.start()
@@ -118,6 +119,7 @@ class DebugCommunication(object):
         self.output = {}
         self.configuration_done_sent = False
         self.frame_scopes = {}
+        self.init_commands = init_commands
 
     @classmethod
     def encode_content(cls, s):
@@ -146,6 +148,12 @@ class DebugCommunication(object):
         self.output_condition.release()
         return output
 
+    def enqueue_recv_packet(self, packet):
+        self.recv_condition.acquire()
+        self.recv_packets.append(packet)
+        self.recv_condition.notify()
+        self.recv_condition.release()
+
     def handle_recv_packet(self, packet):
         '''Called by the read thread that is waiting for all incoming packets
            to store the incoming packet in "self.recv_packets" in a thread safe
@@ -153,6 +161,11 @@ class DebugCommunication(object):
            indicate a new packet is available. Returns True if the caller
            should keep calling this function for more packets.
         '''
+        # If EOF, notify the read thread by enqueing a None.
+        if not packet:
+            self.enqueue_recv_packet(None)
+            return False
+
         # Check the packet to see if is an event packet
         keepGoing = True
         packet_type = packet['type']
@@ -174,7 +187,7 @@ class DebugCommunication(object):
                     self.output[category] = output
                 self.output_condition.notify()
                 self.output_condition.release()
-                # no need to add 'output' packets to our packets list
+                # no need to add 'output' event packets to our packets list
                 return keepGoing
             elif event == 'process':
                 # When a new process is attached or launched, remember the
@@ -188,13 +201,17 @@ class DebugCommunication(object):
                 self._process_stopped()
                 tid = body['threadId']
                 self.thread_stop_reasons[tid] = body
+            elif event == 'breakpoint':
+                # Breakpoint events come in when a breakpoint has locations
+                # added or removed. Keep track of them so we can look for them
+                # in tests.
+                self.breakpoint_events.append(packet)
+                # no need to add 'breakpoint' event packets to our packets list
+                return keepGoing
         elif packet_type == 'response':
             if packet['command'] == 'disconnect':
                 keepGoing = False
-        self.recv_condition.acquire()
-        self.recv_packets.append(packet)
-        self.recv_condition.notify()
-        self.recv_condition.release()
+        self.enqueue_recv_packet(packet)
         return keepGoing
 
     def send_packet(self, command_dict, set_sequence=True):
@@ -222,27 +239,33 @@ class DebugCommunication(object):
            function will wait for the packet to arrive and return it when
            it does.'''
         while True:
-            self.recv_condition.acquire()
-            packet = None
-            while True:
-                for (i, curr_packet) in enumerate(self.recv_packets):
-                    packet_type = curr_packet['type']
-                    if filter_type is None or packet_type in filter_type:
-                        if (filter_event is None or
-                            (packet_type == 'event' and
-                             curr_packet['event'] in filter_event)):
-                            packet = self.recv_packets.pop(i)
-                            break
-                if packet:
-                    break
-                # Sleep until packet is received
-                len_before = len(self.recv_packets)
-                self.recv_condition.wait(timeout)
-                len_after = len(self.recv_packets)
-                if len_before == len_after:
-                    return None  # Timed out
-            self.recv_condition.release()
-            return packet
+            try:
+                self.recv_condition.acquire()
+                packet = None
+                while True:
+                    for (i, curr_packet) in enumerate(self.recv_packets):
+                        if not curr_packet:
+                            raise EOFError
+                        packet_type = curr_packet['type']
+                        if filter_type is None or packet_type in filter_type:
+                            if (filter_event is None or
+                                (packet_type == 'event' and
+                                 curr_packet['event'] in filter_event)):
+                                packet = self.recv_packets.pop(i)
+                                break
+                    if packet:
+                        break
+                    # Sleep until packet is received
+                    len_before = len(self.recv_packets)
+                    self.recv_condition.wait(timeout)
+                    len_after = len(self.recv_packets)
+                    if len_before == len_after:
+                        return None  # Timed out
+                return packet
+            except EOFError:
+                return None
+            finally:
+                self.recv_condition.release()
 
         return None
 
@@ -332,6 +355,10 @@ class DebugCommunication(object):
             return response['body']['stackFrames'][0]
         print('invalid response')
         return None
+
+    def get_completions(self, text):
+        response = self.request_completions(text)
+        return response['body']['targets']
 
     def get_scope_variables(self, scope_name, frameIndex=0, threadId=None):
         stackFrame = self.get_stackFrame(frameIndex=frameIndex,
@@ -433,8 +460,9 @@ class DebugCommunication(object):
             args_dict['waitFor'] = waitFor
         if trace:
             args_dict['trace'] = trace
+        args_dict['initCommands'] = self.init_commands
         if initCommands:
-            args_dict['initCommands'] = initCommands
+            args_dict['initCommands'].extend(initCommands)
         if preRunCommands:
             args_dict['preRunCommands'] = preRunCommands
         if stopCommands:
@@ -482,13 +510,7 @@ class DebugCommunication(object):
             'arguments': args_dict
         }
         response = self.send_recv(command_dict)
-        recv_packets = []
-        self.recv_condition.acquire()
-        for event in self.recv_packets:
-            if event['event'] != 'stopped':
-                recv_packets.append(event)
-        self.recv_packets = recv_packets
-        self.recv_condition.release()
+        # Caller must still call wait_for_stopped.
         return response
 
     def request_disconnect(self, terminateDebuggee=None):
@@ -548,7 +570,7 @@ class DebugCommunication(object):
                        disableSTDIO=False, shellExpandArguments=False,
                        trace=False, initCommands=None, preRunCommands=None,
                        stopCommands=None, exitCommands=None, sourcePath=None,
-                       debuggerRoot=None):
+                       debuggerRoot=None, launchCommands=None):
         args_dict = {
             'program': program
         }
@@ -568,8 +590,9 @@ class DebugCommunication(object):
             args_dict['shellExpandArguments'] = shellExpandArguments
         if trace:
             args_dict['trace'] = trace
+        args_dict['initCommands'] = self.init_commands
         if initCommands:
-            args_dict['initCommands'] = initCommands
+            args_dict['initCommands'].extend(initCommands)
         if preRunCommands:
             args_dict['preRunCommands'] = preRunCommands
         if stopCommands:
@@ -580,6 +603,8 @@ class DebugCommunication(object):
             args_dict['sourcePath'] = sourcePath
         if debuggerRoot:
             args_dict['debuggerRoot'] = debuggerRoot
+        if launchCommands:
+            args_dict['launchCommands'] = launchCommands
         command_dict = {
             'command': 'launch',
             'type': 'request',
@@ -702,6 +727,18 @@ class DebugCommunication(object):
         }
         return self.send_recv(command_dict)
 
+    def request_completions(self, text):
+        args_dict = {
+            'text': text,
+            'column': len(text)
+        }
+        command_dict = {
+            'command': 'completions',
+            'type': 'request',
+            'arguments': args_dict
+        }
+        return self.send_recv(command_dict)
+
     def request_stackTrace(self, threadId=None, startFrame=None, levels=None,
                            dump=False):
         if threadId is None:
@@ -810,19 +847,24 @@ class DebugCommunication(object):
 
 
 class DebugAdaptor(DebugCommunication):
-    def __init__(self, executable=None, port=None):
+    def __init__(self, executable=None, port=None, init_commands=[], log_file=None):
         self.process = None
         if executable is not None:
+            adaptor_env = os.environ.copy()
+            if log_file:
+                adaptor_env['LLDBVSCODE_LOG'] = log_file
             self.process = subprocess.Popen([executable],
                                             stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE)
+                                            stderr=subprocess.PIPE,
+                                            env=adaptor_env)
             DebugCommunication.__init__(self, self.process.stdout,
-                                        self.process.stdin)
+                                        self.process.stdin, init_commands)
         elif port is not None:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect(('127.0.0.1', port))
-            DebugCommunication.__init__(self, s.makefile('r'), s.makefile('w'))
+            DebugCommunication.__init__(self, s.makefile('r'), s.makefile('w'),
+                init_commands)
 
     def get_pid(self):
         if self.process:

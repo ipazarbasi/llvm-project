@@ -114,7 +114,12 @@ TEST(FormatTestObjCStyle, DetectsObjCInHeaders) {
   EXPECT_EQ(FormatStyle::LK_Cpp, Style->Language);
 
   Style =
-      getStyle("{}", "a.h", "none", "typedef NS_ENUM(NSInteger, Foo) {};\n");
+      getStyle("{}", "a.h", "none", "typedef NS_ENUM(int, Foo) {};\n");
+  ASSERT_TRUE((bool)Style);
+  EXPECT_EQ(FormatStyle::LK_ObjC, Style->Language);
+
+  Style = getStyle("{}", "a.h", "none",
+                   "typedef NS_CLOSED_ENUM(int, Foo) {};\n");
   ASSERT_TRUE((bool)Style);
   EXPECT_EQ(FormatStyle::LK_ObjC, Style->Language);
 
@@ -202,7 +207,7 @@ TEST_F(FormatTestObjC, FormatObjCAutoreleasepool) {
                "  f();\n"
                "}\n");
   Style.BreakBeforeBraces = FormatStyle::BS_Custom;
-  Style.BraceWrapping.AfterControlStatement = true;
+  Style.BraceWrapping.AfterControlStatement = FormatStyle::BWACS_Always;
   verifyFormat("@autoreleasepool\n"
                "{\n"
                "  f();\n"
@@ -232,7 +237,7 @@ TEST_F(FormatTestObjC, FormatObjCSynchronized) {
                "  f();\n"
                "}\n");
   Style.BreakBeforeBraces = FormatStyle::BS_Custom;
-  Style.BraceWrapping.AfterControlStatement = true;
+  Style.BraceWrapping.AfterControlStatement = FormatStyle::BWACS_Always;
   verifyFormat("@synchronized(self)\n"
                "{\n"
                "  f();\n"
@@ -886,6 +891,18 @@ TEST_F(FormatTestObjC, FormatObjCMethodExpr) {
                "                 bb:42\n"
                "                 cc:42];");
 
+  // Avoid breaking between unary operators and ObjC method expressions.
+  Style.ColumnLimit = 45;
+  verifyFormat("if (a012345678901234567890123 &&\n"
+               "    ![foo bar]) {\n"
+               "}");
+  verifyFormat("if (a012345678901234567890123 &&\n"
+               "    +[foo bar]) {\n"
+               "}");
+  verifyFormat("if (a012345678901234567890123 &&\n"
+               "    -[foo bar]) {\n"
+               "}");
+
   Style.ColumnLimit = 70;
   verifyFormat(
       "void f() {\n"
@@ -1355,6 +1372,61 @@ TEST_F(FormatTestObjC, DisambiguatesCallsFromCppLambdas) {
   // verifyFormat("x = ([a foo:bar] > b->c == 'd');");
   // verifyFormat("x = ([a foo:bar] < b->c == 'd');");
   // verifyFormat("x = ([a foo:bar] >> b->c == 'd');");
+}
+
+TEST_F(FormatTestObjC,  DisambiguatesCallsFromStructuredBindings) {
+  verifyFormat("int f() {\n"
+               "  if (a && [f arg])\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  if (a & [f arg])\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  for (auto &[elem] : list)\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat("int f() {\n"
+               "  for (auto &&[elem] : list)\n"
+               "    return 0;\n"
+               "}");
+  verifyFormat(
+      "int f() {\n"
+      "  for (auto /**/ const /**/ volatile /**/ && /**/ [elem] : list)\n"
+      "    return 0;\n"
+      "}");
+}
+
+TEST_F(FormatTestObjC, BreakLineBeforeNestedBlockParam) {
+  Style = getGoogleStyle(FormatStyle::LK_ObjC);
+  Style.ObjCBreakBeforeNestedBlockParam = false;
+  Style.ColumnLimit = 0;
+
+  verifyFormat("[self.test1 t:self callback:^(typeof(self) self, NSNumber *u, "
+               "NSNumber *v) {\n"
+               "  u = v;\n"
+               "}]");
+
+  verifyFormat("[self.test1 t:self w:self callback:^(typeof(self) self, "
+               "NSNumber *u, NSNumber *v) {\n"
+               "  u = v;\n"
+               "}]");
+
+  verifyFormat("[self.test1 t:self w:self callback:^(typeof(self) self, "
+               "NSNumber *u, NSNumber *v) {\n"
+               "  u = c;\n"
+               "} w:self callback2:^(typeof(self) self, NSNumber *a, NSNumber "
+               "*b, NSNumber *c) {\n"
+               "  b = c;\n"
+               "}]");
+
+  Style.ColumnLimit = 80;
+  verifyFormat(
+      "[self.test_method a:self b:self\n"
+      "           callback:^(typeof(self) self, NSNumber *u, NSNumber *v) {\n"
+      "             u = v;\n"
+      "           }]");
 }
 
 } // end namespace

@@ -15,7 +15,7 @@ body: |
     ; GCN: [[S_AND_B32_1:%[0-9]+]]:sreg_32_xm0 = S_AND_B32 65535, [[S_AND_B32_]], implicit-def $scc
     ; GCN: S_ENDPGM 0
     %0:sgpr_64 = COPY $sgpr4_sgpr5
-    %1:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM %0, 16, 0
+    %1:sreg_32_xm0_xexec = S_LOAD_DWORD_IMM %0, 16, 0, 0
     %2:sreg_32_xm0 = S_AND_B32 %1, 255, implicit-def $scc
     %3:sreg_32_xm0 = S_AND_B32 65535, %2, implicit-def $scc
     S_ENDPGM 0
@@ -32,7 +32,7 @@ body:             |
   ; GCN:   [[S_AND_B64_:%[0-9]+]]:sreg_64 = S_AND_B64 [[COPY]], undef %1:sreg_64, implicit-def dead $scc
   ; GCN:   [[S_XOR_B64_:%[0-9]+]]:sreg_64 = S_XOR_B64 [[S_AND_B64_]], [[COPY]], implicit-def dead $scc
   ; GCN:   $exec = S_MOV_B64_term killed [[S_AND_B64_]]
-  ; GCN:   SI_MASK_BRANCH %bb.2, implicit $exec
+  ; GCN:   S_CBRANCH_EXECZ %bb.2, implicit $exec
   ; GCN:   S_BRANCH %bb.1
   ; GCN: bb.1:
   ; GCN:   successors: %bb.2(0x80000000)

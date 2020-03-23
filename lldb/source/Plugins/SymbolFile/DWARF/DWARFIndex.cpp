@@ -1,4 +1,4 @@
-//===-- DWARFIndex.cpp -----------------------------------------*- C++ -*-===//
+//===-- DWARFIndex.cpp ----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,10 +7,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "Plugins/SymbolFile/DWARF/DWARFIndex.h"
-#include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
-#include "Plugins/SymbolFile/DWARF/DWARFDebugInfo.h"
-
 #include "Plugins/Language/ObjC/ObjCLanguage.h"
+#include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
+#include "Plugins/SymbolFile/DWARF/SymbolFileDWARF.h"
 
 using namespace lldb_private;
 using namespace lldb;
@@ -18,13 +17,13 @@ using namespace lldb;
 DWARFIndex::~DWARFIndex() = default;
 
 void DWARFIndex::ProcessFunctionDIE(llvm::StringRef name, DIERef ref,
-                                    DWARFDebugInfo &info,
+                                    SymbolFileDWARF &dwarf,
                                     const CompilerDeclContext &parent_decl_ctx,
                                     uint32_t name_type_mask,
                                     std::vector<DWARFDIE> &dies) {
-  DWARFDIE die = info.GetDIE(ref);
+  DWARFDIE die = dwarf.GetDIE(ref);
   if (!die) {
-    ReportInvalidDIEOffset(ref.die_offset, name);
+    ReportInvalidDIERef(ref, name);
     return;
   }
 
@@ -37,7 +36,7 @@ void DWARFIndex::ProcessFunctionDIE(llvm::StringRef name, DIERef ref,
 
   // Otherwise, we need to also check that the context matches. If it does not
   // match, we do nothing.
-  if (!SymbolFileDWARF::DIEInDeclContext(&parent_decl_ctx, die))
+  if (!SymbolFileDWARF::DIEInDeclContext(parent_decl_ctx, die))
     return;
 
   // In case of a full match, we just insert everything we find.

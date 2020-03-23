@@ -13,18 +13,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "Taint.h"
 #include "clang/AST/CharUnits.h"
+#include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/DynamicSize.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace clang;
 using namespace ento;
+using namespace taint;
 
 namespace {
 class VLASizeChecker : public Checker< check::PreStmt<DeclStmt> > {
@@ -70,7 +73,7 @@ void VLASizeChecker::reportBug(
     break;
   }
 
-  auto report = llvm::make_unique<BugReport>(*BT, os.str(), N);
+  auto report = std::make_unique<PathSensitiveBugReport>(*BT, os.str(), N);
   report->addVisitor(std::move(Visitor));
   report->addRange(SizeE->getSourceRange());
   bugreporter::trackExpressionValue(N, SizeE, *report);
@@ -106,9 +109,9 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
     return;
 
   // Check if the size is tainted.
-  if (state->isTainted(sizeV)) {
+  if (isTainted(state, sizeV)) {
     reportBug(VLA_Tainted, SE, nullptr, C,
-              llvm::make_unique<TaintBugVisitor>(sizeV));
+              std::make_unique<TaintBugVisitor>(sizeV));
     return;
   }
 
@@ -163,13 +166,14 @@ void VLASizeChecker::checkPreStmt(const DeclStmt *DS, CheckerContext &C) const {
   SVal ArraySizeVal = svalBuilder.evalBinOpNN(
       state, BO_Mul, ArrayLength, EleSizeVal.castAs<NonLoc>(), SizeTy);
 
-  // Finally, assume that the array's extent matches the given size.
+  // Finally, assume that the array's size matches the given size.
   const LocationContext *LC = C.getLocationContext();
-  DefinedOrUnknownSVal Extent =
-    state->getRegion(VD, LC)->getExtent(svalBuilder);
+  DefinedOrUnknownSVal DynSize =
+      getDynamicSize(state, state->getRegion(VD, LC), svalBuilder);
+
   DefinedOrUnknownSVal ArraySize = ArraySizeVal.castAs<DefinedOrUnknownSVal>();
   DefinedOrUnknownSVal sizeIsKnown =
-    svalBuilder.evalEQ(state, Extent, ArraySize);
+      svalBuilder.evalEQ(state, DynSize, ArraySize);
   state = state->assume(sizeIsKnown, true);
 
   // Assume should not fail at this point.

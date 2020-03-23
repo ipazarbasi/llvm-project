@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_DWARFCallFrameInfo_h_
-#define liblldb_DWARFCallFrameInfo_h_
+#ifndef LLDB_SYMBOL_DWARFCALLFRAMEINFO_H
+#define LLDB_SYMBOL_DWARFCALLFRAMEINFO_H
 
 #include <map>
 #include <mutex>
@@ -43,13 +43,18 @@ public:
   // address.
   bool GetAddressRange(Address addr, AddressRange &range);
 
-  // Return an UnwindPlan based on the call frame information encoded in the
-  // FDE of this DWARFCallFrameInfo section.
-  bool GetUnwindPlan(Address addr, UnwindPlan &unwind_plan);
+  /// Return an UnwindPlan based on the call frame information encoded in the
+  /// FDE of this DWARFCallFrameInfo section. The returned plan will be valid
+  /// (at least) for the given address.
+  bool GetUnwindPlan(const Address &addr, UnwindPlan &unwind_plan);
+
+  /// Return an UnwindPlan based on the call frame information encoded in the
+  /// FDE of this DWARFCallFrameInfo section. The returned plan will be valid
+  /// (at least) for some address in the given range.
+  bool GetUnwindPlan(const AddressRange &range, UnwindPlan &unwind_plan);
 
   typedef RangeVector<lldb::addr_t, uint32_t> FunctionAddressAndSizeVector;
 
-  //------------------------------------------------------------------
   // Build a vector of file address and size for all functions in this Module
   // based on the eh_frame FDE entries.
   //
@@ -116,8 +121,8 @@ private:
 
   bool IsEHFrame() const;
 
-  bool GetFDEEntryByFileAddress(lldb::addr_t file_offset,
-                                FDEEntryMap::Entry &fde_entry);
+  llvm::Optional<FDEEntryMap::Entry>
+  GetFirstFDEEntryInRange(const AddressRange &range);
 
   void GetFDEIndex();
 
@@ -161,4 +166,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_DWARFCallFrameInfo_h_
+#endif // LLDB_SYMBOL_DWARFCALLFRAMEINFO_H

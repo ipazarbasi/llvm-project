@@ -29,10 +29,6 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 using namespace llvm;
 
-static MachineModuleInfoMachO &getMachOMMI(AsmPrinter &AP) {
-  return AP.MMI->getObjFileInfo<MachineModuleInfoMachO>();
-}
-
 static MCSymbol *GetSymbolFromOperand(const MachineOperand &MO,
                                       AsmPrinter &AP) {
   const TargetMachine &TM = AP.TM;
@@ -41,13 +37,6 @@ static MCSymbol *GetSymbolFromOperand(const MachineOperand &MO,
   MCContext &Ctx = AP.OutContext;
 
   SmallString<128> Name;
-  StringRef Suffix;
-  if (MO.getTargetFlags() & PPCII::MO_NLP_FLAG)
-    Suffix = "$non_lazy_ptr";
-
-  if (!Suffix.empty())
-    Name += DL.getPrivateGlobalPrefix();
-
   if (!MO.isGlobal()) {
     assert(MO.isSymbol() && "Isn't a symbol reference");
     Mangler::getNameWithPrefix(Name, MO.getSymbolName(), DL);
@@ -56,30 +45,13 @@ static MCSymbol *GetSymbolFromOperand(const MachineOperand &MO,
     TM.getNameWithPrefix(Name, GV, Mang);
   }
 
-  Name += Suffix;
   MCSymbol *Sym = Ctx.getOrCreateSymbol(Name);
-
-  // If the symbol reference is actually to a non_lazy_ptr, not to the symbol,
-  // then add the suffix.
-  if (MO.getTargetFlags() & PPCII::MO_NLP_FLAG) {
-    MachineModuleInfoMachO &MachO = getMachOMMI(AP);
-
-    MachineModuleInfoImpl::StubValueTy &StubSym = MachO.getGVStubEntry(Sym);
-
-    if (!StubSym.getPointer()) {
-      assert(MO.isGlobal() && "Extern symbol not handled yet");
-      StubSym = MachineModuleInfoImpl::
-                   StubValueTy(AP.getSymbol(MO.getGlobal()),
-                               !MO.getGlobal()->hasInternalLinkage());
-    }
-    return Sym;
-  }
 
   return Sym;
 }
 
 static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
-                              AsmPrinter &Printer, bool isDarwin) {
+                              AsmPrinter &Printer) {
   MCContext &Ctx = Printer.OutContext;
   MCSymbolRefExpr::VariantKind RefKind = MCSymbolRefExpr::VK_None;
 
@@ -110,16 +82,16 @@ static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
     RefKind = MCSymbolRefExpr::VK_PLT;
 
   const MachineFunction *MF = MO.getParent()->getParent()->getParent();
+  const Module *M = MF->getFunction().getParent();
   const PPCSubtarget *Subtarget = &(MF->getSubtarget<PPCSubtarget>());
   const TargetMachine &TM = Printer.TM;
   const MCExpr *Expr = MCSymbolRefExpr::create(Symbol, RefKind, Ctx);
-  // -msecure-plt option works only in PIC mode. If secure plt mode
-  // is on add 32768 to symbol.
+  // If -msecure-plt -fPIC, add 32768 to symbol.
   if (Subtarget->isSecurePlt() && TM.isPositionIndependent() &&
+      M->getPICLevel() == PICLevel::BigPIC &&
       MO.getTargetFlags() == PPCII::MO_PLT)
-    Expr = MCBinaryExpr::createAdd(Expr,
-                                   MCConstantExpr::create(32768, Ctx),
-                                   Ctx);
+    Expr =
+        MCBinaryExpr::createAdd(Expr, MCConstantExpr::create(32768, Ctx), Ctx);
 
   if (!MO.isJTI() && MO.getOffset())
     Expr = MCBinaryExpr::createAdd(Expr,
@@ -137,10 +109,10 @@ static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
   // Add ha16() / lo16() markers if required.
   switch (access) {
     case PPCII::MO_LO:
-      Expr = PPCMCExpr::createLo(Expr, isDarwin, Ctx);
+      Expr = PPCMCExpr::createLo(Expr, Ctx);
       break;
     case PPCII::MO_HA:
-      Expr = PPCMCExpr::createHa(Expr, isDarwin, Ctx);
+      Expr = PPCMCExpr::createHa(Expr, Ctx);
       break;
   }
 
@@ -148,20 +120,18 @@ static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
 }
 
 void llvm::LowerPPCMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
-                                        AsmPrinter &AP, bool isDarwin) {
+                                        AsmPrinter &AP) {
   OutMI.setOpcode(MI->getOpcode());
 
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     MCOperand MCOp;
-    if (LowerPPCMachineOperandToMCOperand(MI->getOperand(i), MCOp, AP,
-                                          isDarwin))
+    if (LowerPPCMachineOperandToMCOperand(MI->getOperand(i), MCOp, AP))
       OutMI.addOperand(MCOp);
   }
 }
 
 bool llvm::LowerPPCMachineOperandToMCOperand(const MachineOperand &MO,
-                                             MCOperand &OutMO, AsmPrinter &AP,
-                                             bool isDarwin) {
+                                             MCOperand &OutMO, AsmPrinter &AP) {
   switch (MO.getType()) {
   default:
     llvm_unreachable("unknown operand type");
@@ -181,17 +151,20 @@ bool llvm::LowerPPCMachineOperandToMCOperand(const MachineOperand &MO,
     return true;
   case MachineOperand::MO_GlobalAddress:
   case MachineOperand::MO_ExternalSymbol:
-    OutMO = GetSymbolRef(MO, GetSymbolFromOperand(MO, AP), AP, isDarwin);
+    OutMO = GetSymbolRef(MO, GetSymbolFromOperand(MO, AP), AP);
     return true;
   case MachineOperand::MO_JumpTableIndex:
-    OutMO = GetSymbolRef(MO, AP.GetJTISymbol(MO.getIndex()), AP, isDarwin);
+    OutMO = GetSymbolRef(MO, AP.GetJTISymbol(MO.getIndex()), AP);
     return true;
   case MachineOperand::MO_ConstantPoolIndex:
-    OutMO = GetSymbolRef(MO, AP.GetCPISymbol(MO.getIndex()), AP, isDarwin);
+    OutMO = GetSymbolRef(MO, AP.GetCPISymbol(MO.getIndex()), AP);
     return true;
   case MachineOperand::MO_BlockAddress:
-    OutMO = GetSymbolRef(MO, AP.GetBlockAddressSymbol(MO.getBlockAddress()), AP,
-                         isDarwin);
+    OutMO =
+        GetSymbolRef(MO, AP.GetBlockAddressSymbol(MO.getBlockAddress()), AP);
+    return true;
+  case MachineOperand::MO_MCSymbol:
+    OutMO = GetSymbolRef(MO, MO.getMCSymbol(), AP);
     return true;
   case MachineOperand::MO_RegisterMask:
     return false;

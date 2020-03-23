@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 //
 // UNSUPPORTED: libcpp-has-no-threads
+//
+// FLAKY_TEST.
 
 // <mutex>
 
@@ -18,6 +20,8 @@
 #include <thread>
 #include <cstdlib>
 #include <cassert>
+
+#include "test_macros.h"
 
 std::recursive_timed_mutex m;
 

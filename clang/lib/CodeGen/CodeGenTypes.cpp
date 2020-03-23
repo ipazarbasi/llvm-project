@@ -135,8 +135,8 @@ isSafeToConvert(const RecordDecl *RD, CodeGenTypes &CGT,
   // the class.
   if (const CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
     for (const auto &I : CRD->bases())
-      if (!isSafeToConvert(I.getType()->getAs<RecordType>()->getDecl(),
-                           CGT, AlreadyChecked))
+      if (!isSafeToConvert(I.getType()->castAs<RecordType>()->getDecl(), CGT,
+                           AlreadyChecked))
         return false;
   }
 
@@ -402,7 +402,7 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
 #define NON_CANONICAL_TYPE(Class, Base) case Type::Class:
 #define DEPENDENT_TYPE(Class, Base) case Type::Class:
 #define NON_CANONICAL_UNLESS_DEPENDENT_TYPE(Class, Base) case Type::Class:
-#include "clang/AST/TypeNodes.def"
+#include "clang/AST/TypeNodes.inc"
     llvm_unreachable("Non-canonical or dependent types aren't possible.");
 
   case Type::Builtin: {
@@ -511,7 +511,44 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     case BuiltinType::OCLReserveID:
       ResultType = CGM.getOpenCLRuntime().convertOpenCLSpecificType(Ty);
       break;
-
+    case BuiltinType::SveInt8:
+    case BuiltinType::SveUint8:
+      return llvm::VectorType::get(llvm::IntegerType::get(getLLVMContext(), 8),
+                                   {16, true});
+    case BuiltinType::SveInt16:
+    case BuiltinType::SveUint16:
+      return llvm::VectorType::get(llvm::IntegerType::get(getLLVMContext(), 16),
+                                   {8, true});
+    case BuiltinType::SveInt32:
+    case BuiltinType::SveUint32:
+      return llvm::VectorType::get(llvm::IntegerType::get(getLLVMContext(), 32),
+                                   {4, true});
+    case BuiltinType::SveInt64:
+    case BuiltinType::SveUint64:
+      return llvm::VectorType::get(llvm::IntegerType::get(getLLVMContext(), 64),
+                                   {2, true});
+    case BuiltinType::SveFloat16:
+      return llvm::VectorType::get(
+          getTypeForFormat(getLLVMContext(),
+                           Context.getFloatTypeSemantics(Context.HalfTy),
+                           /* UseNativeHalf = */ true),
+          {8, true});
+    case BuiltinType::SveFloat32:
+      return llvm::VectorType::get(
+          getTypeForFormat(getLLVMContext(),
+                           Context.getFloatTypeSemantics(Context.FloatTy),
+                           /* UseNativeHalf = */ false),
+          {4, true});
+    case BuiltinType::SveFloat64:
+      return llvm::VectorType::get(
+          getTypeForFormat(getLLVMContext(),
+                           Context.getFloatTypeSemantics(Context.DoubleTy),
+                           /* UseNativeHalf = */ false),
+          {2, true});
+    case BuiltinType::SveBool:
+      return llvm::VectorType::get(llvm::IntegerType::get(getLLVMContext(), 1),
+                                   {16, true});
+      break;
     case BuiltinType::Dependent:
 #define BUILTIN_TYPE(Id, SingletonId)
 #define PLACEHOLDER_TYPE(Id, SingletonId) \
@@ -728,8 +765,7 @@ llvm::StructType *CodeGenTypes::ConvertRecordDeclType(const RecordDecl *RD) {
   if (const CXXRecordDecl *CRD = dyn_cast<CXXRecordDecl>(RD)) {
     for (const auto &I : CRD->bases()) {
       if (I.isVirtual()) continue;
-
-      ConvertRecordDeclType(I.getType()->getAs<RecordType>()->getDecl());
+      ConvertRecordDeclType(I.getType()->castAs<RecordType>()->getDecl());
     }
   }
 

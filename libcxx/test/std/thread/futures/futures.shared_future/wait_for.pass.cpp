@@ -9,6 +9,8 @@
 // UNSUPPORTED: libcpp-has-no-threads
 // UNSUPPORTED: c++98, c++03
 
+// FLAKY_TEST.
+
 // <future>
 
 // class shared_future<R>
@@ -19,6 +21,8 @@
 
 #include <future>
 #include <cassert>
+
+#include "test_macros.h"
 
 typedef std::chrono::milliseconds ms;
 

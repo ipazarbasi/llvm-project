@@ -15,6 +15,8 @@
 #ifndef LLVM_CLANG_LIB_CODEGEN_CGCUDARUNTIME_H
 #define LLVM_CLANG_LIB_CODEGEN_CGCUDARUNTIME_H
 
+#include "llvm/ADT/StringRef.h"
+
 namespace llvm {
 class Function;
 class GlobalVariable;
@@ -23,6 +25,7 @@ class GlobalVariable;
 namespace clang {
 
 class CUDAKernelCallExpr;
+class NamedDecl;
 class VarDecl;
 
 namespace CodeGen {
@@ -63,6 +66,10 @@ public:
   /// Returns a module cleanup function or nullptr if it's not needed.
   /// Must be called after ModuleCtorFunction
   virtual llvm::Function *makeModuleDtorFunction() = 0;
+
+  /// Returns function or variable name on device side even if the current
+  /// compilation is for host.
+  virtual std::string getDeviceSideName(const NamedDecl *ND) = 0;
 };
 
 /// Creates an instance of a CUDA runtime class.

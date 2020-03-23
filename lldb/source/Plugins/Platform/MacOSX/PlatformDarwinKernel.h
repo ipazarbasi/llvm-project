@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_PlatformDarwinKernel_h_
-#define liblldb_PlatformDarwinKernel_h_
+#ifndef LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMDARWINKERNEL_H
+#define LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMDARWINKERNEL_H
 
 #include "lldb/Utility/ConstString.h"
 
@@ -22,9 +22,7 @@
 
 class PlatformDarwinKernel : public PlatformDarwin {
 public:
-  //------------------------------------------------------------
   // Class Functions
-  //------------------------------------------------------------
   static lldb::PlatformSP CreateInstance(bool force,
                                          const lldb_private::ArchSpec *arch);
 
@@ -38,25 +36,19 @@ public:
 
   static const char *GetDescriptionStatic();
 
-  //------------------------------------------------------------
   // Class Methods
-  //------------------------------------------------------------
   PlatformDarwinKernel(lldb_private::LazyBool is_ios_debug_session);
 
   virtual ~PlatformDarwinKernel();
 
-  //------------------------------------------------------------
   // lldb_private::PluginInterface functions
-  //------------------------------------------------------------
   lldb_private::ConstString GetPluginName() override {
     return GetPluginNameStatic();
   }
 
   uint32_t GetPluginVersion() override { return 1; }
 
-  //------------------------------------------------------------
   // lldb_private::Platform functions
-  //------------------------------------------------------------
   const char *GetDescription() override { return GetDescriptionStatic(); }
 
   void GetStatus(lldb_private::Stream &strm) override;
@@ -204,4 +196,4 @@ public:
 
 #endif // __APPLE__
 
-#endif // liblldb_PlatformDarwinKernel_h_
+#endif // LLDB_SOURCE_PLUGINS_PLATFORM_MACOSX_PLATFORMDARWINKERNEL_H

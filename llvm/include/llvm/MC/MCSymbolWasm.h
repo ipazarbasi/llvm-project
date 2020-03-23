@@ -18,8 +18,10 @@ class MCSymbolWasm : public MCSymbol {
   bool IsWeak = false;
   bool IsHidden = false;
   bool IsComdat = false;
+  mutable bool IsUsedInGOT = false;
   Optional<std::string> ImportModule;
   Optional<std::string> ImportName;
+  Optional<std::string> ExportName;
   wasm::WasmSignature *Signature = nullptr;
   Optional<wasm::WasmGlobalType> GlobalType;
   Optional<wasm::WasmEventType> EventType;
@@ -29,8 +31,6 @@ class MCSymbolWasm : public MCSymbol {
   const MCExpr *SymbolSize = nullptr;
 
 public:
-  // Use a module name of "env" for now, for compatibility with existing tools.
-  // This is temporary, and may change, as the ABI is not yet stable.
   MCSymbolWasm(const StringMapEntry<bool> *Name, bool isTemporary)
       : MCSymbol(SymbolKindWasm, Name, isTemporary) {}
   static bool classof(const MCSymbol *S) { return S->isWasm(); }
@@ -53,6 +53,13 @@ public:
     modifyFlags(wasm::WASM_SYMBOL_EXPORTED, wasm::WASM_SYMBOL_EXPORTED);
   }
 
+  bool isNoStrip() const {
+    return getFlags() & wasm::WASM_SYMBOL_NO_STRIP;
+  }
+  void setNoStrip() const {
+    modifyFlags(wasm::WASM_SYMBOL_NO_STRIP, wasm::WASM_SYMBOL_NO_STRIP);
+  }
+
   bool isWeak() const { return IsWeak; }
   void setWeak(bool isWeak) { IsWeak = isWeak; }
 
@@ -62,21 +69,40 @@ public:
   bool isComdat() const { return IsComdat; }
   void setComdat(bool isComdat) { IsComdat = isComdat; }
 
+  bool hasImportModule() const { return ImportModule.hasValue(); }
   const StringRef getImportModule() const {
       if (ImportModule.hasValue()) {
           return ImportModule.getValue();
       }
+      // Use a default module name of "env" for now, for compatibility with
+      // existing tools.
+      // TODO(sbc): Find a way to specify a default value in the object format
+      // without picking a hardcoded value like this.
       return "env";
   }
-  void setImportModule(StringRef Name) { ImportModule = Name; }
+  void setImportModule(StringRef Name) {
+    ImportModule = std::string(std::string(Name));
+  }
 
+  bool hasImportName() const { return ImportName.hasValue(); }
   const StringRef getImportName() const {
       if (ImportName.hasValue()) {
           return ImportName.getValue();
       }
       return getName();
   }
-  void setImportName(StringRef Name) { ImportName = Name; }
+  void setImportName(StringRef Name) {
+    ImportName = std::string(std::string(Name));
+  }
+
+  bool hasExportName() const { return ExportName.hasValue(); }
+  const StringRef getExportName() const { return ExportName.getValue(); }
+  void setExportName(StringRef Name) {
+    ExportName = std::string(std::string(Name));
+  }
+
+  void setUsedInGOT() const { IsUsedInGOT = true; }
+  bool isUsedInGOT() const { return IsUsedInGOT; }
 
   const wasm::WasmSignature *getSignature() const { return Signature; }
   void setSignature(wasm::WasmSignature *Sig) { Signature = Sig; }

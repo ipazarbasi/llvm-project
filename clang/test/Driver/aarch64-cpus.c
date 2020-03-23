@@ -23,8 +23,11 @@
 // RUN: %clang -target arm64-apple-darwin -arch arm64 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-DARWIN %s
 // RUN: %clang -target arm64-apple-darwin -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-DARWIN %s
 // RUN: %clang -target arm64-apple-ios12.0 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-DARWIN %s
-// ARM64-DARWIN: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "cyclone"
+// ARM64-DARWIN: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "apple-a7"
 // ARM64-DARWIN-SAME: "-target-feature" "+aes"
+
+// RUN: %clang -target arm64-apple-darwin -arch arm64_32 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64_32-DARWIN %s
+// ARM64_32-DARWIN: "-cc1"{{.*}} "-triple" "aarch64_32{{.*}}" "-target-cpu" "apple-s4"
 
 // RUN: %clang -target aarch64 -mcpu=cortex-a35 -### -c %s 2>&1 | FileCheck -check-prefix=CA35 %s
 // RUN: %clang -target aarch64 -mlittle-endian -mcpu=cortex-a35 -### -c %s 2>&1 | FileCheck -check-prefix=CA35 %s
@@ -41,6 +44,22 @@
 // RUN: %clang -target arm64 -mlittle-endian -mtune=cortex-a35 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-CA35-TUNE %s
 // ARM64-CA35: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "cortex-a35"
 // ARM64-CA35-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
+
+// RUN: %clang -target aarch64 -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34 %s
+// RUN: %clang -target aarch64 -mlittle-endian -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34 %s
+// RUN: %clang -target aarch64_be -mlittle-endian -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34 %s
+// RUN: %clang -target aarch64 -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-TUNE %s
+// RUN: %clang -target aarch64 -mlittle-endian -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-TUNE %s
+// RUN: %clang -target aarch64_be -mlittle-endian -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-TUNE %s
+// CA34: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "cortex-a34"
+// CA34-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "generic"
+
+// RUN: %clang -target arm64 -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-CA34 %s
+// RUN: %clang -target arm64 -mlittle-endian -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-CA34 %s
+// RUN: %clang -target arm64 -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-CA34-TUNE %s
+// RUN: %clang -target arm64 -mlittle-endian -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-CA34-TUNE %s
+// ARM64-CA34: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "cortex-a34"
+// ARM64-CA34-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
 
 // RUN: %clang -target aarch64 -mcpu=cortex-a53 -### -c %s 2>&1 | FileCheck -check-prefix=CA53 %s
 // RUN: %clang -target aarch64 -mlittle-endian -mcpu=cortex-a53 -### -c %s 2>&1 | FileCheck -check-prefix=CA53 %s
@@ -152,24 +171,6 @@
 // ARM64-CORTEX-A76: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "cortex-a76"
 // ARM64-CORTEX-A76-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
 
-// RUN: %clang -target aarch64 -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1 %s
-// RUN: %clang -target aarch64 -mlittle-endian -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1 %s
-// RUN: %clang -target aarch64_be -mlittle-endian -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1 %s
-// RUN: %clang -target aarch64 -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-TUNE %s
-// RUN: %clang -target aarch64 -mlittle-endian -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-TUNE %s
-// RUN: %clang -target aarch64_be -mlittle-endian -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-TUNE %s
-// M1: "-cc1"{{.*}} "-triple" "aarch64{{(--)?}}"{{.*}} "-target-cpu" "exynos-m1"
-// M1-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{(--)?}}"{{.*}} "-target-cpu" "generic"
-
-// RUN: %clang -target aarch64 -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2 %s
-// RUN: %clang -target aarch64 -mlittle-endian -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2 %s
-// RUN: %clang -target aarch64_be -mlittle-endian -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2 %s
-// RUN: %clang -target aarch64 -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-TUNE %s
-// RUN: %clang -target aarch64 -mlittle-endian -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-TUNE %s
-// RUN: %clang -target aarch64_be -mlittle-endian -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-TUNE %s
-// M2: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "exynos-m2"
-// M2-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "generic"
-
 // RUN: %clang -target aarch64_be -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3 %s
 // RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3 %s
 // RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3 %s
@@ -189,19 +190,15 @@
 // M4-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "generic"
 // M4-TUNE-NOT: "+v8.2a"
 
-// RUN: %clang -target arm64 -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M1 %s
-// RUN: %clang -target arm64 -mlittle-endian -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M1 %s
-// RUN: %clang -target arm64 -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M1-TUNE %s
-// RUN: %clang -target arm64 -mlittle-endian -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M1-TUNE %s
-// ARM64-M1: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "exynos-m1"
-// ARM64-M1-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
-
-// RUN: %clang -target arm64 -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M2 %s
-// RUN: %clang -target arm64 -mlittle-endian -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M2 %s
-// RUN: %clang -target arm64 -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M2-TUNE %s
-// RUN: %clang -target arm64 -mlittle-endian -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M2-TUNE %s
-// ARM64-M2: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "exynos-m2"
-// ARM64-M2-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
+// RUN: %clang -target aarch64_be -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5 %s
+// RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5 %s
+// RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5 %s
+// RUN: %clang -target aarch64_be -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-TUNE %s
+// RUN: %clang -target aarch64 -mbig-endian -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-TUNE %s
+// RUN: %clang -target aarch64_be -mbig-endian -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-TUNE %s
+// M5: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "exynos-m5" "-target-feature" "+v8.2a"
+// M5-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "generic"
+// M5-TUNE-NOT: "+v8.2a"
 
 // RUN: %clang -target arm64 -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M3 %s
 // RUN: %clang -target arm64 -mlittle-endian -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M3 %s
@@ -217,6 +214,14 @@
 // ARM64-M4: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "exynos-m4" "-target-feature" "+v8.2a"
 // ARM64-M4-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
 // ARM64-M4-TUNE-NOT: "+v8.2a"
+
+// RUN: %clang -target arm64 -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M5 %s
+// RUN: %clang -target arm64 -mlittle-endian -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M5 %s
+// RUN: %clang -target arm64 -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M5-TUNE %s
+// RUN: %clang -target arm64 -mlittle-endian -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-M5-TUNE %s
+// ARM64-M5: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "exynos-m5" "-target-feature" "+v8.2a"
+// ARM64-M5-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
+// ARM64-M5-TUNE-NOT: "+v8.2a"
 
 // RUN: %clang -target aarch64 -mcpu=falkor -### -c %s 2>&1 | FileCheck -check-prefix=FALKOR %s
 // RUN: %clang -target aarch64 -mlittle-endian -mcpu=falkor -### -c %s 2>&1 | FileCheck -check-prefix=FALKOR %s
@@ -264,6 +269,20 @@
 // ARM64-THUNDERX2T99-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
 // ARM64-THUNDERX2T99-TUNE-NOT: +v8.1a
 
+// RUN: %clang -target aarch64 -mcpu=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=A64FX %s
+// RUN: %clang -target aarch64 -mlittle-endian -mcpu=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=A64FX %s
+// RUN: %clang -target aarch64 -mtune=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=A64FX-TUNE %s
+// RUN: %clang -target aarch64 -mlittle-endian -mtune=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=A64FX-TUNE %s
+// A64FX: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "a64fx"
+// A64FX-TUNE: "-cc1"{{.*}} "-triple" "aarch64{{.*}}" "-target-cpu" "generic"
+
+// RUN: %clang -target arm64 -mcpu=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-A64FX %s
+// RUN: %clang -target arm64 -mlittle-endian -mcpu=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-A64FX %s
+// RUN: %clang -target arm64 -mtune=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-A64FX-TUNE %s
+// RUN: %clang -target arm64 -mlittle-endian -mtune=a64fx -### -c %s 2>&1 | FileCheck -check-prefix=ARM64-A64FX-TUNE %s
+// ARM64-A64FX: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "a64fx"
+// ARM64-A64FX-TUNE: "-cc1"{{.*}} "-triple" "arm64{{.*}}" "-target-cpu" "generic"
+
 // RUN: %clang -target aarch64_be -### -c %s 2>&1 | FileCheck -check-prefix=GENERIC-BE %s
 // RUN: %clang -target aarch64 -mbig-endian -### -c %s 2>&1 | FileCheck -check-prefix=GENERIC-BE %s
 // RUN: %clang -target aarch64_be -mbig-endian -### -c %s 2>&1 | FileCheck -check-prefix=GENERIC-BE %s
@@ -277,6 +296,15 @@
 // RUN: %clang -target aarch64_be -mbig-endian -mtune=cortex-a35 -### -c %s 2>&1 | FileCheck -check-prefix=CA35-BE-TUNE %s
 // CA35-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "cortex-a35"
 // CA35-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
+
+// RUN: %clang -target aarch64_be -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE %s
+// RUN: %clang -target aarch64 -mbig-endian -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE %s
+// RUN: %clang -target aarch64_be -mbig-endian -mcpu=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE %s
+// RUN: %clang -target aarch64_be -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE-TUNE %s
+// RUN: %clang -target aarch64 -mbig-endian -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE-TUNE %s
+// RUN: %clang -target aarch64_be -mbig-endian -mtune=cortex-a34 -### -c %s 2>&1 | FileCheck -check-prefix=CA34-BE-TUNE %s
+// CA34-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "cortex-a34"
+// CA34-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
 
 // RUN: %clang -target aarch64_be -mcpu=cortex-a53 -### -c %s 2>&1 | FileCheck -check-prefix=CA53-BE %s
 // RUN: %clang -target aarch64 -mbig-endian -mcpu=cortex-a53 -### -c %s 2>&1 | FileCheck -check-prefix=CA53-BE %s
@@ -323,24 +351,6 @@
 // CORTEX-A73-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "cortex-a73"
 // CORTEX-A73-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
 
-// RUN: %clang -target aarch64_be -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE %s
-// RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE %s
-// RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE %s
-// RUN: %clang -target aarch64_be -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE-TUNE %s
-// RUN: %clang -target aarch64 -mbig-endian -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE-TUNE %s
-// RUN: %clang -target aarch64_be -mbig-endian -mtune=exynos-m1 -### -c %s 2>&1 | FileCheck -check-prefix=M1-BE-TUNE %s
-// M1-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "exynos-m1"
-// M1-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
-
-// RUN: %clang -target aarch64_be -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE %s
-// RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE %s
-// RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE %s
-// RUN: %clang -target aarch64_be -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE-TUNE %s
-// RUN: %clang -target aarch64 -mbig-endian -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE-TUNE %s
-// RUN: %clang -target aarch64_be -mbig-endian -mtune=exynos-m2 -### -c %s 2>&1 | FileCheck -check-prefix=M2-BE-TUNE %s
-// M2-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "exynos-m2"
-// M2-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
-
 // RUN: %clang -target aarch64_be -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3-BE %s
 // RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3-BE %s
 // RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m3 -### -c %s 2>&1 | FileCheck -check-prefix=M3-BE %s
@@ -359,6 +369,16 @@
 // M4-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "exynos-m4" "-target-feature" "+v8.2a"
 // M4-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
 // M4-BE-TUNE-NOT: "+v8.2a"
+
+// RUN: %clang -target aarch64_be -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE %s
+// RUN: %clang -target aarch64 -mbig-endian -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE %s
+// RUN: %clang -target aarch64_be -mbig-endian -mcpu=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE %s
+// RUN: %clang -target aarch64_be -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE-TUNE %s
+// RUN: %clang -target aarch64 -mbig-endian -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE-TUNE %s
+// RUN: %clang -target aarch64_be -mbig-endian -mtune=exynos-m5 -### -c %s 2>&1 | FileCheck -check-prefix=M5-BE-TUNE %s
+// M5-BE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "exynos-m5" "-target-feature" "+v8.2a"
+// M5-BE-TUNE: "-cc1"{{.*}} "-triple" "aarch64_be{{.*}}" "-target-cpu" "generic"
+// M5-BE-TUNE-NOT: "+v8.2a"
 
 // RUN: %clang -target aarch64_be -mcpu=thunderx2t99 -### -c %s 2>&1 | FileCheck -check-prefix=THUNDERX2T99-BE %s
 // RUN: %clang -target aarch64 -mbig-endian -mcpu=thunderx2t99 -### -c %s 2>&1 | FileCheck -check-prefix=THUNDERX2T99-BE %s

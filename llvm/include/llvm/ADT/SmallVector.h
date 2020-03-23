@@ -41,8 +41,8 @@ protected:
   unsigned Size = 0, Capacity;
 
   SmallVectorBase() = delete;
-  SmallVectorBase(void *FirstEl, size_t Capacity)
-      : BeginX(FirstEl), Capacity(Capacity) {}
+  SmallVectorBase(void *FirstEl, size_t TotalCapacity)
+      : BeginX(FirstEl), Capacity(TotalCapacity) {}
 
   /// This is an implementation of the grow() method which only works
   /// on POD-like data types and is out of line to reduce code duplication.
@@ -63,9 +63,9 @@ public:
   /// of the buffer when they know that more elements are available, and only
   /// update the size later. This avoids the cost of value initializing elements
   /// which will only be overwritten.
-  void set_size(size_t Size) {
-    assert(Size <= capacity());
-    this->Size = Size;
+  void set_size(size_t N) {
+    assert(N <= capacity());
+    Size = N;
   }
 };
 
@@ -284,8 +284,8 @@ protected:
   template <typename T1, typename T2>
   static void uninitialized_copy(
       T1 *I, T1 *E, T2 *Dest,
-      typename std::enable_if<std::is_same<typename std::remove_const<T1>::type,
-                                           T2>::value>::type * = nullptr) {
+      std::enable_if_t<std::is_same<typename std::remove_const<T1>::type,
+                                    T2>::value> * = nullptr) {
     // Use memcpy for PODs iterated by pointers (which includes SmallVector
     // iterators): std::uninitialized_copy optimizes to memmove, but we can
     // use memcpy here. Note that I and E are iterators and thus might be
@@ -318,6 +318,7 @@ class SmallVectorImpl : public SmallVectorTemplateBase<T> {
 public:
   using iterator = typename SuperClass::iterator;
   using const_iterator = typename SuperClass::const_iterator;
+  using reference = typename SuperClass::reference;
   using size_type = typename SuperClass::size_type;
 
 protected:
@@ -380,27 +381,23 @@ public:
 
   /// Add the specified range to the end of the SmallVector.
   template <typename in_iter,
-            typename = typename std::enable_if<std::is_convertible<
+            typename = std::enable_if_t<std::is_convertible<
                 typename std::iterator_traits<in_iter>::iterator_category,
-                std::input_iterator_tag>::value>::type>
+                std::input_iterator_tag>::value>>
   void append(in_iter in_start, in_iter in_end) {
     size_type NumInputs = std::distance(in_start, in_end);
-    // Grow allocated space if needed.
     if (NumInputs > this->capacity() - this->size())
       this->grow(this->size()+NumInputs);
 
-    // Copy the new elements over.
     this->uninitialized_copy(in_start, in_end, this->end());
     this->set_size(this->size() + NumInputs);
   }
 
-  /// Add the specified range to the end of the SmallVector.
+  /// Append \p NumInputs copies of \p Elt to the end.
   void append(size_type NumInputs, const T &Elt) {
-    // Grow allocated space if needed.
     if (NumInputs > this->capacity() - this->size())
       this->grow(this->size()+NumInputs);
 
-    // Copy the new elements over.
     std::uninitialized_fill_n(this->end(), NumInputs, Elt);
     this->set_size(this->size() + NumInputs);
   }
@@ -421,9 +418,9 @@ public:
   }
 
   template <typename in_iter,
-            typename = typename std::enable_if<std::is_convertible<
+            typename = std::enable_if_t<std::is_convertible<
                 typename std::iterator_traits<in_iter>::iterator_category,
-                std::input_iterator_tag>::value>::type>
+                std::input_iterator_tag>::value>>
   void assign(in_iter in_start, in_iter in_end) {
     clear();
     append(in_start, in_end);
@@ -578,9 +575,9 @@ public:
   }
 
   template <typename ItTy,
-            typename = typename std::enable_if<std::is_convertible<
+            typename = std::enable_if_t<std::is_convertible<
                 typename std::iterator_traits<ItTy>::iterator_category,
-                std::input_iterator_tag>::value>::type>
+                std::input_iterator_tag>::value>>
   iterator insert(iterator I, ItTy From, ItTy To) {
     // Convert iterator to elt# to avoid invalidating iterator when we reserve()
     size_t InsertElt = I - this->begin();
@@ -641,11 +638,12 @@ public:
     insert(I, IL.begin(), IL.end());
   }
 
-  template <typename... ArgTypes> void emplace_back(ArgTypes &&... Args) {
+  template <typename... ArgTypes> reference emplace_back(ArgTypes &&... Args) {
     if (LLVM_UNLIKELY(this->size() >= this->capacity()))
       this->grow();
     ::new ((void *)this->end()) T(std::forward<ArgTypes>(Args)...);
     this->set_size(this->size() + 1);
+    return this->back();
   }
 
   SmallVectorImpl &operator=(const SmallVectorImpl &RHS);
@@ -851,9 +849,9 @@ public:
   }
 
   template <typename ItTy,
-            typename = typename std::enable_if<std::is_convertible<
+            typename = std::enable_if_t<std::is_convertible<
                 typename std::iterator_traits<ItTy>::iterator_category,
-                std::input_iterator_tag>::value>::type>
+                std::input_iterator_tag>::value>>
   SmallVector(ItTy S, ItTy E) : SmallVectorImpl<T>(N) {
     this->append(S, E);
   }
@@ -907,6 +905,17 @@ public:
 template <typename T, unsigned N>
 inline size_t capacity_in_bytes(const SmallVector<T, N> &X) {
   return X.capacity_in_bytes();
+}
+
+/// Given a range of type R, iterate the entire range and return a
+/// SmallVector with elements of the vector.  This is useful, for example,
+/// when you want to iterate a range and then sort the results.
+template <unsigned Size, typename R>
+SmallVector<typename std::remove_const<typename std::remove_reference<
+                decltype(*std::begin(std::declval<R &>()))>::type>::type,
+            Size>
+to_vector(R &&Range) {
+  return {std::begin(Range), std::end(Range)};
 }
 
 } // end namespace llvm

@@ -42,6 +42,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/User.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/BlockFrequency.h"
 #include "llvm/Support/BranchProbability.h"
@@ -202,9 +203,10 @@ struct PartialInlinerImpl {
       function_ref<AssumptionCache *(Function &)> LookupAC,
       std::function<TargetTransformInfo &(Function &)> *GTTI,
       Optional<function_ref<BlockFrequencyInfo &(Function &)>> GBFI,
+      std::function<const TargetLibraryInfo &(Function &)> *GTLI,
       ProfileSummaryInfo *ProfSI)
       : GetAssumptionCache(GetAC), LookupAssumptionCache(LookupAC),
-        GetTTI(GTTI), GetBFI(GBFI), PSI(ProfSI) {}
+        GetTTI(GTTI), GetBFI(GBFI), GetTLI(GTLI), PSI(ProfSI) {}
 
   bool run(Module &M);
   // Main part of the transformation that calls helper functions to find
@@ -273,6 +275,7 @@ private:
   function_ref<AssumptionCache *(Function &)> LookupAssumptionCache;
   std::function<TargetTransformInfo &(Function &)> *GetTTI;
   Optional<function_ref<BlockFrequencyInfo &(Function &)>> GetBFI;
+  std::function<const TargetLibraryInfo &(Function &)> *GetTLI;
   ProfileSummaryInfo *PSI;
 
   // Return the frequency of the OutlininingBB relative to F's entry point.
@@ -354,6 +357,7 @@ struct PartialInlinerLegacyPass : public ModulePass {
     AU.addRequired<AssumptionCacheTracker>();
     AU.addRequired<ProfileSummaryInfoWrapperPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
+    AU.addRequired<TargetLibraryInfoWrapperPass>();
   }
 
   bool runOnModule(Module &M) override {
@@ -380,8 +384,13 @@ struct PartialInlinerLegacyPass : public ModulePass {
       return TTIWP->getTTI(F);
     };
 
+    std::function<const TargetLibraryInfo &(Function &)> GetTLI =
+        [this](Function &F) -> TargetLibraryInfo & {
+      return this->getAnalysis<TargetLibraryInfoWrapperPass>().getTLI(F);
+    };
+
     return PartialInlinerImpl(&GetAssumptionCache, LookupAssumptionCache,
-                              &GetTTI, NoneType::None, PSI)
+                              &GetTTI, NoneType::None, &GetTLI, PSI)
         .run(M);
   }
 };
@@ -409,7 +418,7 @@ PartialInlinerImpl::computeOutliningColdRegionsInfo(Function *F,
     return std::unique_ptr<FunctionOutliningMultiRegionInfo>();
 
   std::unique_ptr<FunctionOutliningMultiRegionInfo> OutliningInfo =
-      llvm::make_unique<FunctionOutliningMultiRegionInfo>();
+      std::make_unique<FunctionOutliningMultiRegionInfo>();
 
   auto IsSingleEntry = [](SmallVectorImpl<BasicBlock *> &BlockList) {
     BasicBlock *Dom = BlockList.front();
@@ -589,7 +598,7 @@ PartialInlinerImpl::computeOutliningInfo(Function *F) {
   };
 
   std::unique_ptr<FunctionOutliningInfo> OutliningInfo =
-      llvm::make_unique<FunctionOutliningInfo>();
+      std::make_unique<FunctionOutliningInfo>();
 
   BasicBlock *CurrEntry = EntryBlock;
   bool CandidateFound = false;
@@ -701,7 +710,7 @@ PartialInlinerImpl::computeOutliningInfo(Function *F) {
   return OutliningInfo;
 }
 
-// Check if there is PGO data or user annoated branch data:
+// Check if there is PGO data or user annotated branch data:
 static bool hasProfileData(Function *F, FunctionOutliningInfo *OI) {
   if (F->hasProfileData())
     return true;
@@ -768,16 +777,17 @@ bool PartialInlinerImpl::shouldPartialInline(
   assert(Callee == Cloner.ClonedFunc);
 
   if (SkipCostAnalysis)
-    return isInlineViable(*Callee);
+    return isInlineViable(*Callee).isSuccess();
 
   Function *Caller = CS.getCaller();
   auto &CalleeTTI = (*GetTTI)(*Callee);
   bool RemarksEnabled =
       Callee->getContext().getDiagHandlerPtr()->isMissedOptRemarkEnabled(
           DEBUG_TYPE);
-  InlineCost IC =
-      getInlineCost(CS, getInlineParams(), CalleeTTI, *GetAssumptionCache,
-                    GetBFI, PSI, RemarksEnabled ? &ORE : nullptr);
+  assert(Call && "invalid callsite for partial inline");
+  InlineCost IC = getInlineCost(cast<CallBase>(*Call), getInlineParams(),
+                                CalleeTTI, *GetAssumptionCache, GetBFI, *GetTLI,
+                                PSI, RemarksEnabled ? &ORE : nullptr);
 
   if (IC.isAlways()) {
     ORE.emit([&]() {
@@ -811,7 +821,7 @@ bool PartialInlinerImpl::shouldPartialInline(
   const DataLayout &DL = Caller->getParent()->getDataLayout();
 
   // The savings of eliminating the call:
-  int NonWeightedSavings = getCallsiteCost(CS, DL);
+  int NonWeightedSavings = getCallsiteCost(cast<CallBase>(*Call), DL);
   BlockFrequency NormWeightedSavings(NonWeightedSavings);
 
   // Weighted saving is smaller than weighted cost, return false
@@ -868,12 +878,12 @@ int PartialInlinerImpl::computeBBInlineCost(BasicBlock *BB) {
       continue;
 
     if (CallInst *CI = dyn_cast<CallInst>(&I)) {
-      InlineCost += getCallsiteCost(CallSite(CI), DL);
+      InlineCost += getCallsiteCost(*CI, DL);
       continue;
     }
 
     if (InvokeInst *II = dyn_cast<InvokeInst>(&I)) {
-      InlineCost += getCallsiteCost(CallSite(II), DL);
+      InlineCost += getCallsiteCost(*II, DL);
       continue;
     }
 
@@ -965,7 +975,7 @@ PartialInlinerImpl::FunctionCloner::FunctionCloner(
     Function *F, FunctionOutliningInfo *OI, OptimizationRemarkEmitter &ORE,
     function_ref<AssumptionCache *(Function &)> LookupAC)
     : OrigFunc(F), ORE(ORE), LookupAC(LookupAC) {
-  ClonedOI = llvm::make_unique<FunctionOutliningInfo>();
+  ClonedOI = std::make_unique<FunctionOutliningInfo>();
 
   // Clone the function, so that we can hack away on it.
   ValueToValueMapTy VMap;
@@ -990,7 +1000,7 @@ PartialInlinerImpl::FunctionCloner::FunctionCloner(
     OptimizationRemarkEmitter &ORE,
     function_ref<AssumptionCache *(Function &)> LookupAC)
     : OrigFunc(F), ORE(ORE), LookupAC(LookupAC) {
-  ClonedOMRI = llvm::make_unique<FunctionOutliningMultiRegionInfo>();
+  ClonedOMRI = std::make_unique<FunctionOutliningMultiRegionInfo>();
 
   // Clone the function, so that we can hack away on it.
   ValueToValueMapTy VMap;
@@ -1121,6 +1131,9 @@ bool PartialInlinerImpl::FunctionCloner::doMultiRegionFunctionOutlining() {
   BranchProbabilityInfo BPI(*ClonedFunc, LI);
   ClonedFuncBFI.reset(new BlockFrequencyInfo(*ClonedFunc, BPI, LI));
 
+  // Cache and recycle the CodeExtractor analysis to avoid O(n^2) compile-time.
+  CodeExtractorAnalysisCache CEAC(*ClonedFunc);
+
   SetVector<Value *> Inputs, Outputs, Sinks;
   for (FunctionOutliningMultiRegionInfo::OutlineRegionInfo RegionInfo :
        ClonedOMRI->ORI) {
@@ -1147,7 +1160,7 @@ bool PartialInlinerImpl::FunctionCloner::doMultiRegionFunctionOutlining() {
     if (Outputs.size() > 0 && !ForceLiveExit)
       continue;
 
-    Function *OutlinedFunc = CE.extractCodeRegion();
+    Function *OutlinedFunc = CE.extractCodeRegion(CEAC);
 
     if (OutlinedFunc) {
       CallSite OCS = PartialInlinerImpl::getOneCallSiteTo(OutlinedFunc);
@@ -1209,11 +1222,12 @@ PartialInlinerImpl::FunctionCloner::doSingleRegionFunctionOutlining() {
     }
 
   // Extract the body of the if.
+  CodeExtractorAnalysisCache CEAC(*ClonedFunc);
   Function *OutlinedFunc =
       CodeExtractor(ToExtract, &DT, /*AggregateArgs*/ false,
                     ClonedFuncBFI.get(), &BPI, LookupAC(*ClonedFunc),
                     /* AllowVarargs */ true)
-          .extractCodeRegion();
+          .extractCodeRegion(CEAC);
 
   if (OutlinedFunc) {
     BasicBlock *OutliningCallBB =
@@ -1263,7 +1277,7 @@ std::pair<bool, Function *> PartialInlinerImpl::unswitchFunction(Function *F) {
   if (PSI->isFunctionEntryCold(F))
     return {false, nullptr};
 
-  if (empty(F->users()))
+  if (F->users().empty())
     return {false, nullptr};
 
   OptimizationRemarkEmitter ORE(F);
@@ -1369,7 +1383,7 @@ bool PartialInlinerImpl::tryPartialInline(FunctionCloner &Cloner) {
     return false;
   }
 
-  assert(empty(Cloner.OrigFunc->users()) &&
+  assert(Cloner.OrigFunc->users().empty() &&
          "F's users should all be replaced!");
 
   std::vector<User *> Users(Cloner.ClonedFunc->user_begin(),
@@ -1405,7 +1419,8 @@ bool PartialInlinerImpl::tryPartialInline(FunctionCloner &Cloner) {
     // bail on vararg functions.
     if (!InlineFunction(CS, IFI, nullptr, true,
                         (Cloner.ClonedOI ? Cloner.OutlinedFunctions.back().first
-                                         : nullptr)))
+                                         : nullptr))
+             .isSuccess())
       continue;
 
     CallerORE.emit(OR);
@@ -1486,6 +1501,7 @@ INITIALIZE_PASS_BEGIN(PartialInlinerLegacyPass, "partial-inliner",
 INITIALIZE_PASS_DEPENDENCY(AssumptionCacheTracker)
 INITIALIZE_PASS_DEPENDENCY(ProfileSummaryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(PartialInlinerLegacyPass, "partial-inliner",
                     "Partial Inliner", false, false)
 
@@ -1516,10 +1532,15 @@ PreservedAnalyses PartialInlinerPass::run(Module &M,
     return FAM.getResult<TargetIRAnalysis>(F);
   };
 
+  std::function<const TargetLibraryInfo &(Function &)> GetTLI =
+      [&FAM](Function &F) -> TargetLibraryInfo & {
+    return FAM.getResult<TargetLibraryAnalysis>(F);
+  };
+
   ProfileSummaryInfo *PSI = &AM.getResult<ProfileSummaryAnalysis>(M);
 
   if (PartialInlinerImpl(&GetAssumptionCache, LookupAssumptionCache, &GetTTI,
-                         {GetBFI}, PSI)
+                         {GetBFI}, &GetTLI, PSI)
           .run(M))
     return PreservedAnalyses::none();
   return PreservedAnalyses::all();

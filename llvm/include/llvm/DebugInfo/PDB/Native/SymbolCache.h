@@ -14,7 +14,6 @@
 #include "llvm/DebugInfo/CodeView/TypeIndex.h"
 #include "llvm/DebugInfo/CodeView/TypeRecord.h"
 #include "llvm/DebugInfo/PDB/Native/NativeRawSymbol.h"
-#include "llvm/Support/Allocator.h"
 
 #include <memory>
 #include <vector>
@@ -87,7 +86,7 @@ public:
 
     // Initial construction must not access the cache, since it must be done
     // atomically.
-    auto Result = llvm::make_unique<ConcreteSymbolT>(
+    auto Result = std::make_unique<ConcreteSymbolT>(
         Session, Id, std::forward<Args>(ConstructorArgs)...);
     Result->SymbolId = Id;
 

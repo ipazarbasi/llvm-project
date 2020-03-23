@@ -25,6 +25,7 @@
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/FPEnv.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Instructions.h"
@@ -205,59 +206,153 @@ namespace llvm {
     /// @}
   };
 
+  /// This is the common base class for vector predication intrinsics.
+  class VPIntrinsic : public IntrinsicInst {
+  public:
+    static Optional<int> GetMaskParamPos(Intrinsic::ID IntrinsicID);
+    static Optional<int> GetVectorLengthParamPos(Intrinsic::ID IntrinsicID);
+
+    /// The llvm.vp.* intrinsics for this instruction Opcode
+    static Intrinsic::ID GetForOpcode(unsigned OC);
+
+    // Whether \p ID is a VP intrinsic ID.
+    static bool IsVPIntrinsic(Intrinsic::ID);
+
+    /// \return the mask parameter or nullptr.
+    Value *getMaskParam() const;
+
+    /// \return the vector length parameter or nullptr.
+    Value *getVectorLengthParam() const;
+
+    /// \return whether the vector length param can be ignored.
+    bool canIgnoreVectorLengthParam() const;
+
+    /// \return the static element count (vector number of elements) the vector
+    /// length parameter applies to.
+    ElementCount getStaticVectorLength() const;
+
+    // Methods for support type inquiry through isa, cast, and dyn_cast:
+    static bool classof(const IntrinsicInst *I) {
+      return IsVPIntrinsic(I->getIntrinsicID());
+    }
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+
+    // Equivalent non-predicated opcode
+    unsigned getFunctionalOpcode() const {
+      return GetFunctionalOpcodeForVP(getIntrinsicID());
+    }
+
+    // Equivalent non-predicated opcode
+    static unsigned GetFunctionalOpcodeForVP(Intrinsic::ID ID);
+  };
+
   /// This is the common base class for constrained floating point intrinsics.
   class ConstrainedFPIntrinsic : public IntrinsicInst {
   public:
-    enum RoundingMode {
-      rmInvalid,
-      rmDynamic,
-      rmToNearest,
-      rmDownward,
-      rmUpward,
-      rmTowardZero
-    };
-
-    enum ExceptionBehavior {
-      ebInvalid,
-      ebIgnore,
-      ebMayTrap,
-      ebStrict
-    };
-
     bool isUnaryOp() const;
     bool isTernaryOp() const;
-    RoundingMode getRoundingMode() const;
-    ExceptionBehavior getExceptionBehavior() const;
+    Optional<fp::RoundingMode> getRoundingMode() const;
+    Optional<fp::ExceptionBehavior> getExceptionBehavior() const;
+
+    // Methods for support type inquiry through isa, cast, and dyn_cast:
+    static bool classof(const IntrinsicInst *I);
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+  };
+
+  /// Constrained floating point compare intrinsics.
+  class ConstrainedFPCmpIntrinsic : public ConstrainedFPIntrinsic {
+  public:
+    FCmpInst::Predicate getPredicate() const;
 
     // Methods for support type inquiry through isa, cast, and dyn_cast:
     static bool classof(const IntrinsicInst *I) {
       switch (I->getIntrinsicID()) {
-      case Intrinsic::experimental_constrained_fadd:
-      case Intrinsic::experimental_constrained_fsub:
-      case Intrinsic::experimental_constrained_fmul:
-      case Intrinsic::experimental_constrained_fdiv:
-      case Intrinsic::experimental_constrained_frem:
-      case Intrinsic::experimental_constrained_fma:
-      case Intrinsic::experimental_constrained_sqrt:
-      case Intrinsic::experimental_constrained_pow:
-      case Intrinsic::experimental_constrained_powi:
-      case Intrinsic::experimental_constrained_sin:
-      case Intrinsic::experimental_constrained_cos:
-      case Intrinsic::experimental_constrained_exp:
-      case Intrinsic::experimental_constrained_exp2:
-      case Intrinsic::experimental_constrained_log:
-      case Intrinsic::experimental_constrained_log10:
-      case Intrinsic::experimental_constrained_log2:
-      case Intrinsic::experimental_constrained_rint:
-      case Intrinsic::experimental_constrained_nearbyint:
-      case Intrinsic::experimental_constrained_maxnum:
-      case Intrinsic::experimental_constrained_minnum:
-      case Intrinsic::experimental_constrained_ceil:
-      case Intrinsic::experimental_constrained_floor:
-      case Intrinsic::experimental_constrained_round:
-      case Intrinsic::experimental_constrained_trunc:
+      case Intrinsic::experimental_constrained_fcmp:
+      case Intrinsic::experimental_constrained_fcmps:
         return true;
       default: return false;
+      }
+    }
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+  };
+
+  /// This class represents an intrinsic that is based on a binary operation.
+  /// This includes op.with.overflow and saturating add/sub intrinsics.
+  class BinaryOpIntrinsic : public IntrinsicInst {
+  public:
+    static bool classof(const IntrinsicInst *I) {
+      switch (I->getIntrinsicID()) {
+      case Intrinsic::uadd_with_overflow:
+      case Intrinsic::sadd_with_overflow:
+      case Intrinsic::usub_with_overflow:
+      case Intrinsic::ssub_with_overflow:
+      case Intrinsic::umul_with_overflow:
+      case Intrinsic::smul_with_overflow:
+      case Intrinsic::uadd_sat:
+      case Intrinsic::sadd_sat:
+      case Intrinsic::usub_sat:
+      case Intrinsic::ssub_sat:
+        return true;
+      default:
+        return false;
+      }
+    }
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+
+    Value *getLHS() const { return const_cast<Value*>(getArgOperand(0)); }
+    Value *getRHS() const { return const_cast<Value*>(getArgOperand(1)); }
+
+    /// Returns the binary operation underlying the intrinsic.
+    Instruction::BinaryOps getBinaryOp() const;
+
+    /// Whether the intrinsic is signed or unsigned.
+    bool isSigned() const;
+
+    /// Returns one of OBO::NoSignedWrap or OBO::NoUnsignedWrap.
+    unsigned getNoWrapKind() const;
+  };
+
+  /// Represents an op.with.overflow intrinsic.
+  class WithOverflowInst : public BinaryOpIntrinsic {
+  public:
+    static bool classof(const IntrinsicInst *I) {
+      switch (I->getIntrinsicID()) {
+      case Intrinsic::uadd_with_overflow:
+      case Intrinsic::sadd_with_overflow:
+      case Intrinsic::usub_with_overflow:
+      case Intrinsic::ssub_with_overflow:
+      case Intrinsic::umul_with_overflow:
+      case Intrinsic::smul_with_overflow:
+        return true;
+      default:
+        return false;
+      }
+    }
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+  };
+
+  /// Represents a saturating add/sub intrinsic.
+  class SaturatingInst : public BinaryOpIntrinsic {
+  public:
+    static bool classof(const IntrinsicInst *I) {
+      switch (I->getIntrinsicID()) {
+      case Intrinsic::uadd_sat:
+      case Intrinsic::sadd_sat:
+      case Intrinsic::usub_sat:
+      case Intrinsic::ssub_sat:
+        return true;
+      default:
+        return false;
       }
     }
     static bool classof(const Value *V) {
@@ -295,7 +390,10 @@ namespace llvm {
       return cast<PointerType>(getRawDest()->getType())->getAddressSpace();
     }
 
+    /// FIXME: Remove this function once transition to Align is over.
+    /// Use getDestAlign() instead.
     unsigned getDestAlignment() const { return getParamAlignment(ARG_DEST); }
+    MaybeAlign getDestAlign() const { return getParamAlign(ARG_DEST); }
 
     /// Set the specified arguments of the instruction.
     void setDest(Value *Ptr) {
@@ -304,11 +402,21 @@ namespace llvm {
       setArgOperand(ARG_DEST, Ptr);
     }
 
-    void setDestAlignment(unsigned Align) {
+    /// FIXME: Remove this function once transition to Align is over.
+    /// Use the version that takes MaybeAlign instead of this one.
+    void setDestAlignment(unsigned Alignment) {
+      setDestAlignment(MaybeAlign(Alignment));
+    }
+    void setDestAlignment(MaybeAlign Alignment) {
       removeParamAttr(ARG_DEST, Attribute::Alignment);
-      if (Align > 0)
+      if (Alignment)
         addParamAttr(ARG_DEST,
-                     Attribute::getWithAlignment(getContext(), Align));
+                     Attribute::getWithAlignment(getContext(), *Alignment));
+    }
+    void setDestAlignment(Align Alignment) {
+      removeParamAttr(ARG_DEST, Attribute::Alignment);
+      addParamAttr(ARG_DEST,
+                   Attribute::getWithAlignment(getContext(), Alignment));
     }
 
     void setLength(Value *L) {
@@ -343,8 +451,14 @@ namespace llvm {
       return cast<PointerType>(getRawSource()->getType())->getAddressSpace();
     }
 
+    /// FIXME: Remove this function once transition to Align is over.
+    /// Use getSourceAlign() instead.
     unsigned getSourceAlignment() const {
       return BaseCL::getParamAlignment(ARG_SOURCE);
+    }
+
+    MaybeAlign getSourceAlign() const {
+      return BaseCL::getParamAlign(ARG_SOURCE);
     }
 
     void setSource(Value *Ptr) {
@@ -353,11 +467,21 @@ namespace llvm {
       BaseCL::setArgOperand(ARG_SOURCE, Ptr);
     }
 
-    void setSourceAlignment(unsigned Align) {
+    /// FIXME: Remove this function once transition to Align is over.
+    /// Use the version that takes MaybeAlign instead of this one.
+    void setSourceAlignment(unsigned Alignment) {
+      setSourceAlignment(MaybeAlign(Alignment));
+    }
+    void setSourceAlignment(MaybeAlign Alignment) {
       BaseCL::removeParamAttr(ARG_SOURCE, Attribute::Alignment);
-      if (Align > 0)
+      if (Alignment)
         BaseCL::addParamAttr(ARG_SOURCE, Attribute::getWithAlignment(
-                                             BaseCL::getContext(), Align));
+                                             BaseCL::getContext(), *Alignment));
+    }
+    void setSourceAlignment(Align Alignment) {
+      BaseCL::removeParamAttr(ARG_SOURCE, Attribute::Alignment);
+      BaseCL::addParamAttr(ARG_SOURCE, Attribute::getWithAlignment(
+                                           BaseCL::getContext(), Alignment));
     }
   };
 
@@ -500,6 +624,7 @@ namespace llvm {
       case Intrinsic::memcpy:
       case Intrinsic::memmove:
       case Intrinsic::memset:
+      case Intrinsic::memcpy_inline:
         return true;
       default: return false;
       }
@@ -526,8 +651,14 @@ namespace llvm {
   public:
     // Methods for support type inquiry through isa, cast, and dyn_cast:
     static bool classof(const IntrinsicInst *I) {
-      return I->getIntrinsicID() == Intrinsic::memcpy ||
-             I->getIntrinsicID() == Intrinsic::memmove;
+      switch (I->getIntrinsicID()) {
+      case Intrinsic::memcpy:
+      case Intrinsic::memmove:
+      case Intrinsic::memcpy_inline:
+        return true;
+      default:
+        return false;
+      }
     }
     static bool classof(const Value *V) {
       return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
@@ -558,6 +689,21 @@ namespace llvm {
     }
   };
 
+  /// This class wraps the llvm.memcpy.inline intrinsic.
+  class MemCpyInlineInst : public MemTransferInst {
+  public:
+    ConstantInt *getLength() const {
+      return cast<ConstantInt>(MemTransferInst::getLength());
+    }
+    // Methods for support type inquiry through isa, cast, and dyn_cast:
+    static bool classof(const IntrinsicInst *I) {
+      return I->getIntrinsicID() == Intrinsic::memcpy_inline;
+    }
+    static bool classof(const Value *V) {
+      return isa<IntrinsicInst>(V) && classof(cast<IntrinsicInst>(V));
+    }
+  };
+
   // The common base class for any memset/memmove/memcpy intrinsics;
   // whether they be atomic or non-atomic.
   // i.e. llvm.element.unordered.atomic.memset/memcpy/memmove
@@ -574,6 +720,7 @@ namespace llvm {
     static bool classof(const IntrinsicInst *I) {
       switch (I->getIntrinsicID()) {
       case Intrinsic::memcpy:
+      case Intrinsic::memcpy_inline:
       case Intrinsic::memmove:
       case Intrinsic::memset:
       case Intrinsic::memcpy_element_unordered_atomic:
@@ -616,6 +763,7 @@ namespace llvm {
     static bool classof(const IntrinsicInst *I) {
       switch (I->getIntrinsicID()) {
       case Intrinsic::memcpy:
+      case Intrinsic::memcpy_inline:
       case Intrinsic::memmove:
       case Intrinsic::memcpy_element_unordered_atomic:
       case Intrinsic::memmove_element_unordered_atomic:
@@ -637,6 +785,7 @@ namespace llvm {
     static bool classof(const IntrinsicInst *I) {
       switch (I->getIntrinsicID()) {
       case Intrinsic::memcpy:
+      case Intrinsic::memcpy_inline:
       case Intrinsic::memcpy_element_unordered_atomic:
         return true;
       default:

@@ -6,10 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ClangExpressionParser_h_
-#define liblldb_ClangExpressionParser_h_
+#ifndef LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONPARSER_H
+#define LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONPARSER_H
 
-#include "lldb/Core/ClangForward.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/ExpressionParser.h"
 #include "lldb/Utility/ArchSpec.h"
@@ -19,15 +18,21 @@
 #include <string>
 #include <vector>
 
-namespace clang {
-class CodeCompleteConsumer;
+namespace llvm {
+class LLVMContext;
 }
+
+namespace clang {
+class CodeGenerator;
+class CodeCompleteConsumer;
+class CompilerInstance;
+} // namespace clang
 
 namespace lldb_private {
 
 class IRExecutionUnit;
+class TypeSystemClang;
 
-//----------------------------------------------------------------------
 /// \class ClangExpressionParser ClangExpressionParser.h
 /// "lldb/Expression/ClangExpressionParser.h" Encapsulates an instance of
 /// Clang that can parse expressions.
@@ -37,15 +42,13 @@ class IRExecutionUnit;
 /// as a glorified parameter list, performing the required parsing and
 /// conversion to formats (DWARF bytecode, or JIT compiled machine code) that
 /// can be executed.
-//----------------------------------------------------------------------
 class ClangExpressionParser : public ExpressionParser {
 public:
-  //------------------------------------------------------------------
   /// Constructor
   ///
   /// Initializes class variables.
   ///
-  /// \param[in] exe_scope,
+  /// \param[in] exe_scope
   ///     If non-NULL, an execution context scope that can help to
   ///     correctly create an expression with a valid process for
   ///     optional tuning Objective-C runtime support. Can be NULL.
@@ -56,20 +59,21 @@ public:
   /// @param[in] include_directories
   ///     List of include directories that should be used when parsing the
   ///     expression.
-  //------------------------------------------------------------------
+  ///
+  /// @param[in] filename
+  ///     Name of the source file that should be used when rendering
+  ///     diagnostics (i.e. errors, warnings or notes from Clang).
   ClangExpressionParser(ExecutionContextScope *exe_scope, Expression &expr,
                         bool generate_debug_info,
-                        std::vector<ConstString> include_directories = {});
+                        std::vector<std::string> include_directories = {},
+                        std::string filename = "<clang expression>");
 
-  //------------------------------------------------------------------
   /// Destructor
-  //------------------------------------------------------------------
   ~ClangExpressionParser() override;
 
   bool Complete(CompletionRequest &request, unsigned line, unsigned pos,
                 unsigned typed_pos) override;
 
-  //------------------------------------------------------------------
   /// Parse a single expression and convert it to IR using Clang.  Don't wrap
   /// the expression in anything at all.
   ///
@@ -79,12 +83,10 @@ public:
   /// \return
   ///     The number of errors encountered during parsing.  0 means
   ///     success.
-  //------------------------------------------------------------------
-  unsigned Parse(DiagnosticManager &diagnostic_manager) override;
+  unsigned Parse(DiagnosticManager &diagnostic_manager);
 
   bool RewriteExpression(DiagnosticManager &diagnostic_manager) override;
 
-  //------------------------------------------------------------------
   /// Ready an already-parsed expression for execution, possibly evaluating it
   /// statically.
   ///
@@ -103,15 +105,6 @@ public:
   /// \param[in] exe_ctx
   ///     The execution context to write the function into.
   ///
-  /// \param[out] evaluated_statically
-  ///     Set to true if the expression could be interpreted statically;
-  ///     untouched otherwise.
-  ///
-  /// \param[out] const_result
-  ///     If the result of the expression is constant, and the
-  ///     expression has no side effects, this is set to the result of the
-  ///     expression.
-  ///
   /// \param[in] execution_policy
   ///     Determines whether the expression must be JIT-compiled, must be
   ///     evaluated statically, or whether this decision may be made
@@ -120,14 +113,12 @@ public:
   /// \return
   ///     An error code indicating the success or failure of the operation.
   ///     Test with Success().
-  //------------------------------------------------------------------
   Status
   PrepareForExecution(lldb::addr_t &func_addr, lldb::addr_t &func_end,
                       lldb::IRExecutionUnitSP &execution_unit_sp,
                       ExecutionContext &exe_ctx, bool &can_interpret,
                       lldb_private::ExecutionPolicy execution_policy) override;
 
-  //------------------------------------------------------------------
   /// Run all static initializers for an execution unit.
   ///
   /// \param[in] execution_unit_sp
@@ -138,11 +129,9 @@ public:
   ///
   /// \return
   ///     The error code indicating the
-  //------------------------------------------------------------------
   Status RunStaticInitializers(lldb::IRExecutionUnitSP &execution_unit_sp,
                                ExecutionContext &exe_ctx);
 
-  //------------------------------------------------------------------
   /// Returns a string representing current ABI.
   ///
   /// \param[in] target_arch
@@ -150,11 +139,9 @@ public:
   ///
   /// \return
   ///     A string representing target ABI for the current architecture.
-  //-------------------------------------------------------------------
   std::string GetClangTargetABI(const ArchSpec &target_arch);
 
 private:
-  //------------------------------------------------------------------
   /// Parses the expression.
   ///
   /// \param[in] diagnostic_manager
@@ -175,7 +162,6 @@ private:
   ///
   /// \return
   ///    The number of parsing errors.
-  //-------------------------------------------------------------------
   unsigned ParseInternal(DiagnosticManager &diagnostic_manager,
                          clang::CodeCompleteConsumer *completion = nullptr,
                          unsigned completion_line = 0,
@@ -191,10 +177,12 @@ private:
   class LLDBPreprocessorCallbacks;
   LLDBPreprocessorCallbacks *m_pp_callbacks; ///< Called when the preprocessor
                                              ///encounters module imports
-  std::unique_ptr<ClangASTContext> m_ast_context;
+  std::unique_ptr<TypeSystemClang> m_ast_context;
 
-  std::vector<ConstString> m_include_directories;
+  std::vector<std::string> m_include_directories;
+  /// File name used for the user expression.
+  std::string m_filename;
 };
 }
 
-#endif // liblldb_ClangExpressionParser_h_
+#endif // LLDB_SOURCE_PLUGINS_EXPRESSIONPARSER_CLANG_CLANGEXPRESSIONPARSER_H

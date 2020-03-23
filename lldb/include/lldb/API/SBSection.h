@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBSection_h_
-#define LLDB_SBSection_h_
+#ifndef LLDB_API_SBSECTION_H
+#define LLDB_API_SBSECTION_H
 
 #include "lldb/API/SBData.h"
 #include "lldb/API/SBDefines.h"
@@ -54,7 +54,6 @@ public:
 
   SectionType GetSectionType();
 
-  //------------------------------------------------------------------
   /// Gets the permissions (RWX) of the section of the object file
   ///
   /// Returns a mask of bits of enum lldb::Permissions for this section.
@@ -65,11 +64,9 @@ public:
   ///
   /// \return
   ///     Returns an unsigned value for Permissions for the section.
-  //------------------------------------------------------------------
   uint32_t
   GetPermissions() const;
 
-  //------------------------------------------------------------------
   /// Return the size of a target's byte represented by this section
   /// in numbers of host bytes. Note that certain architectures have
   /// varying minimum addressable unit (i.e. byte) size for their
@@ -77,7 +74,6 @@ public:
   ///
   /// \return
   ///     The number of host (8-bit) bytes needed to hold a target byte
-  //------------------------------------------------------------------
   uint32_t GetTargetByteSize();
 
   bool operator==(const lldb::SBSection &rhs);
@@ -102,4 +98,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_SBSection_h_
+#endif // LLDB_API_SBSECTION_H

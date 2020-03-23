@@ -1,6 +1,6 @@
 # REQUIRES: x86
 # RUN: llvm-mc -filetype=obj -triple=x86_64-unknown-linux -dwarf-version=5 %s -o %t.o
-# RUN: not ld.lld %t.o -o %t1 2>&1 | FileCheck %s
+# RUN: not ld.lld %t.o -o /dev/null 2>&1 | FileCheck %s
 
 # When compiling with -ffunction-sections, .debug_line may contain descriptions
 # of locations from the different text sections. Until relocated such
@@ -10,7 +10,6 @@
 # CHECK:      error: undefined symbol: foo()
 # CHECK-NEXT: >>> referenced by test.cpp:2
 # CHECK-NEXT: >>>               {{.*}}.o:(bar())
-# CHECK:      error: undefined symbol: foo()
 # CHECK-NEXT: >>> referenced by test.cpp:3
 # CHECK-NEXT: >>>               {{.*}}.o:(baz())
 
@@ -32,11 +31,10 @@
 _Z3barv:
 .Lfunc_begin0:
   .file  0 "/path" "test.cpp" md5 0x9ff11a8404ab4d032ee2dd4f5f8c4140
-  .file  1 "test.cpp" md5 0x9ff11a8404ab4d032ee2dd4f5f8c4140
-  .loc  1 2 0                   # test.cpp:2:0
-  .loc  1 2 20 prologue_end     # test.cpp:2:20
+  .loc  0 2 0                   # test.cpp:2:0
+  .loc  0 2 20 prologue_end     # test.cpp:2:20
   callq  _Z3foov
-  .loc  1 2 13 is_stmt 0        # test.cpp:2:13
+  .loc  0 2 13 is_stmt 0        # test.cpp:2:13
 .Lfunc_end0:
 .size  _Z3barv, .Lfunc_end0-_Z3barv
                                         # -- End function
@@ -45,10 +43,10 @@ _Z3barv:
   .type  _Z3bazv,@function
 _Z3bazv:                                # @_Z3bazv
 .Lfunc_begin1:
-  .loc  1 3 0 is_stmt 1         # test.cpp:3:0
-  .loc  1 3 20 prologue_end     # test.cpp:3:20
+  .loc  0 3 0 is_stmt 1         # test.cpp:3:0
+  .loc  0 3 20 prologue_end     # test.cpp:3:20
   callq  _Z3foov
-  .loc  1 3 13 is_stmt 0        # test.cpp:3:13
+  .loc  0 3 13 is_stmt 0        # test.cpp:3:13
 .Lfunc_end1:
   .size  _Z3bazv, .Lfunc_end1-_Z3bazv
 

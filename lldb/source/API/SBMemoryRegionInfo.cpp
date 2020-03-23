@@ -1,4 +1,4 @@
-//===-- SBMemoryRegionInfo.cpp ----------------------------------*- C++ -*-===//
+//===-- SBMemoryRegionInfo.cpp --------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -43,10 +43,10 @@ operator=(const SBMemoryRegionInfo &rhs) {
 
   if (this != &rhs)
     m_opaque_up = clone(rhs.m_opaque_up);
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
-SBMemoryRegionInfo::~SBMemoryRegionInfo() {}
+SBMemoryRegionInfo::~SBMemoryRegionInfo() = default;
 
 void SBMemoryRegionInfo::Clear() {
   LLDB_RECORD_METHOD_NO_ARGS(void, SBMemoryRegionInfo, Clear);
@@ -131,4 +131,36 @@ bool SBMemoryRegionInfo::GetDescription(SBStream &description) {
   strm.Printf("]");
 
   return true;
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBMemoryRegionInfo>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBMemoryRegionInfo, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBMemoryRegionInfo,
+                            (const lldb::SBMemoryRegionInfo &));
+  LLDB_REGISTER_METHOD(
+      const lldb::SBMemoryRegionInfo &,
+      SBMemoryRegionInfo, operator=,(const lldb::SBMemoryRegionInfo &));
+  LLDB_REGISTER_METHOD(void, SBMemoryRegionInfo, Clear, ());
+  LLDB_REGISTER_METHOD_CONST(
+      bool,
+      SBMemoryRegionInfo, operator==,(const lldb::SBMemoryRegionInfo &));
+  LLDB_REGISTER_METHOD_CONST(
+      bool,
+      SBMemoryRegionInfo, operator!=,(const lldb::SBMemoryRegionInfo &));
+  LLDB_REGISTER_METHOD(lldb::addr_t, SBMemoryRegionInfo, GetRegionBase, ());
+  LLDB_REGISTER_METHOD(lldb::addr_t, SBMemoryRegionInfo, GetRegionEnd, ());
+  LLDB_REGISTER_METHOD(bool, SBMemoryRegionInfo, IsReadable, ());
+  LLDB_REGISTER_METHOD(bool, SBMemoryRegionInfo, IsWritable, ());
+  LLDB_REGISTER_METHOD(bool, SBMemoryRegionInfo, IsExecutable, ());
+  LLDB_REGISTER_METHOD(bool, SBMemoryRegionInfo, IsMapped, ());
+  LLDB_REGISTER_METHOD(const char *, SBMemoryRegionInfo, GetName, ());
+  LLDB_REGISTER_METHOD(bool, SBMemoryRegionInfo, GetDescription,
+                       (lldb::SBStream &));
+}
+
+}
 }

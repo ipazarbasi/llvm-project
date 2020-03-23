@@ -49,14 +49,13 @@ static void emitDiagnostics(const BoundNodes &Nodes,
     ADC->getDecl(),
     Checker,
     /*Name=*/"OSObject C-Style Cast",
-    /*Category=*/"Security",
+    /*BugCategory=*/"Security",
     OS.str(),
     PathDiagnosticLocation::createBegin(CE, BR.getSourceManager(), ADC),
     CE->getSourceRange());
 }
 
-static auto hasTypePointingTo(DeclarationMatcher DeclM)
-    -> decltype(hasType(pointerType())) {
+static decltype(auto) hasTypePointingTo(DeclarationMatcher DeclM) {
   return hasType(pointerType(pointee(hasDeclaration(DeclM))));
 }
 

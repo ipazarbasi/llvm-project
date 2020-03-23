@@ -8,6 +8,8 @@
 //
 // UNSUPPORTED: libcpp-has-no-threads
 
+// FLAKY_TEST.
+
 // This test uses the POSIX header <sys/time.h> which Windows doesn't provide
 // UNSUPPORTED: windows
 
@@ -31,6 +33,8 @@
 #include <cstring>
 #include <signal.h>
 #include <sys/time.h>
+
+#include "test_macros.h"
 
 void sig_action(int) {}
 

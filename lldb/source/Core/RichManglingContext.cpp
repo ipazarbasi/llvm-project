@@ -1,4 +1,4 @@
-//===-- RichManglingContext.cpp ---------------------------------*- C++ -*-===//
+//===-- RichManglingContext.cpp -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -18,9 +18,7 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // RichManglingContext
-//----------------------------------------------------------------------
 void RichManglingContext::ResetProvider(InfoProvider new_provider) {
   // If we want to support parsers for other languages some day, we need a
   // switch here to delete the correct parser type.

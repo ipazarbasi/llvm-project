@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_UDPSocket_h_
-#define liblldb_UDPSocket_h_
+#ifndef LLDB_HOST_COMMON_UDPSOCKET_H
+#define LLDB_HOST_COMMON_UDPSOCKET_H
 
 #include "lldb/Host/Socket.h"
 
@@ -18,6 +18,8 @@ public:
 
   static Status Connect(llvm::StringRef name, bool child_processes_inherit,
                         Socket *&socket);
+
+  std::string GetRemoteConnectionURI() const override;
 
 private:
   UDPSocket(NativeSocket socket);
@@ -31,4 +33,4 @@ private:
 };
 }
 
-#endif // ifndef liblldb_UDPSocket_h_
+#endif // LLDB_HOST_COMMON_UDPSOCKET_H

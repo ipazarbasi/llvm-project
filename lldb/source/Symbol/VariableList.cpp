@@ -1,4 +1,4 @@
-//===-- VariableList.cpp ----------------------------------------*- C++ -*-===//
+//===-- VariableList.cpp --------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -16,14 +16,10 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//----------------------------------------------------------------------
 // VariableList constructor
-//----------------------------------------------------------------------
 VariableList::VariableList() : m_variables() {}
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 VariableList::~VariableList() {}
 
 void VariableList::AddVariable(const VariableSP &var_sp) {

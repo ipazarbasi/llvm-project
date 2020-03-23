@@ -1,4 +1,4 @@
-//===-- ThreadPlanStepOverRange.cpp -----------------------------*- C++ -*-===//
+//===-- ThreadPlanStepOverRange.cpp ---------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -25,10 +25,8 @@ using namespace lldb;
 
 uint32_t ThreadPlanStepOverRange::s_default_flag_values = 0;
 
-//----------------------------------------------------------------------
 // ThreadPlanStepOverRange: Step through a stack range, either stepping over or
 // into based on the value of \a type.
-//----------------------------------------------------------------------
 
 ThreadPlanStepOverRange::ThreadPlanStepOverRange(
     Thread &thread, const AddressRange &range,
@@ -130,10 +128,10 @@ bool ThreadPlanStepOverRange::ShouldStop(Event *event_ptr) {
 
   if (log) {
     StreamString s;
-    s.Address(
-        m_thread.GetRegisterContext()->GetPC(),
+    DumpAddress(
+        s.AsRawOstream(), m_thread.GetRegisterContext()->GetPC(),
         m_thread.CalculateTarget()->GetArchitecture().GetAddressByteSize());
-    log->Printf("ThreadPlanStepOverRange reached %s.", s.GetData());
+    LLDB_LOGF(log, "ThreadPlanStepOverRange reached %s.", s.GetData());
   }
 
   // If we're out of the range but in the same frame or in our caller's frame
@@ -157,8 +155,8 @@ bool ThreadPlanStepOverRange::ShouldStop(Event *event_ptr) {
                                                          stop_others, m_status);
 
     if (new_plan_sp && log)
-      log->Printf(
-          "Thought I stepped out, but in fact arrived at a trampoline.");
+      LLDB_LOGF(log,
+                "Thought I stepped out, but in fact arrived at a trampoline.");
   } else if (frame_order == eFrameCompareYounger) {
     // Make sure we really are in a new frame.  Do that by unwinding and seeing
     // if the start function really is our start function...
@@ -173,6 +171,10 @@ bool ThreadPlanStepOverRange::ShouldStop(Event *event_ptr) {
       const SymbolContext &older_context =
           older_frame_sp->GetSymbolContext(eSymbolContextEverything);
       if (IsEquivalentContext(older_context)) {
+        // If we have the  next-branch-breakpoint in the range, we can just
+        // rely on that breakpoint to trigger once we return to the range.
+        if (m_next_branch_bp_sp)
+          return false;
         new_plan_sp = m_thread.QueueThreadPlanForStepOutNoShouldStop(
             false, nullptr, true, stop_others, eVoteNo, eVoteNoOpinion, 0,
             m_status, true);
@@ -373,10 +375,10 @@ bool ThreadPlanStepOverRange::DoWillResume(lldb::StateType resume_state,
       bool in_inlined_stack = m_thread.DecrementCurrentInlinedDepth();
       if (in_inlined_stack) {
         Log *log(lldb_private::GetLogIfAllCategoriesSet(LIBLLDB_LOG_STEP));
-        if (log)
-          log->Printf("ThreadPlanStepInRange::DoWillResume: adjusting range to "
-                      "the frame at inlined depth %d.",
-                      m_thread.GetCurrentInlinedDepth());
+        LLDB_LOGF(log,
+                  "ThreadPlanStepInRange::DoWillResume: adjusting range to "
+                  "the frame at inlined depth %d.",
+                  m_thread.GetCurrentInlinedDepth());
         StackFrameSP stack_sp = m_thread.GetStackFrameAtIndex(0);
         if (stack_sp) {
           Block *frame_block = stack_sp->GetFrameBlock();
@@ -392,11 +394,7 @@ bool ThreadPlanStepOverRange::DoWillResume(lldb::StateType resume_state,
                   frame_block->GetInlinedFunctionInfo();
               const char *name;
               if (inline_info)
-                name =
-                    inline_info
-                        ->GetName(frame_block->CalculateSymbolContextFunction()
-                                      ->GetLanguage())
-                        .AsCString();
+                name = inline_info->GetName().AsCString();
               else
                 name = "<unknown-notinlined>";
 

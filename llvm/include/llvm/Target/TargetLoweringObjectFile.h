@@ -24,6 +24,7 @@
 namespace llvm {
 
 class GlobalValue;
+class MachineBasicBlock;
 class MachineModuleInfo;
 class Mangler;
 class MCContext;
@@ -36,8 +37,6 @@ class MCValue;
 class TargetMachine;
 
 class TargetLoweringObjectFile : public MCObjectFileInfo {
-  MCContext *Ctx = nullptr;
-
   /// Name-mangler for global names.
   Mangler *Mang = nullptr;
 
@@ -51,6 +50,7 @@ protected:
   unsigned PersonalityEncoding = 0;
   unsigned LSDAEncoding = 0;
   unsigned TTypeEncoding = 0;
+  unsigned CallSiteEncoding = 0;
 
   /// This section contains the static constructor pointer list.
   MCSection *StaticCtorSection = nullptr;
@@ -65,7 +65,6 @@ public:
   operator=(const TargetLoweringObjectFile &) = delete;
   virtual ~TargetLoweringObjectFile();
 
-  MCContext &getContext() const { return *Ctx; }
   Mangler &getMangler() const { return *Mang; }
 
   /// This method must be called before any actual lowering is done.  This
@@ -79,12 +78,24 @@ public:
   /// Emit the module-level metadata that the platform cares about.
   virtual void emitModuleMetadata(MCStreamer &Streamer, Module &M) const {}
 
+  /// Get the module-level metadata that the platform cares about.
+  virtual void getModuleMetadata(Module &M) {}
+
   /// Given a constant with the SectionKind, return a section that it should be
   /// placed in.
   virtual MCSection *getSectionForConstant(const DataLayout &DL,
                                            SectionKind Kind,
                                            const Constant *C,
                                            unsigned &Align) const;
+
+  virtual MCSection *
+  getSectionForMachineBasicBlock(const Function &F,
+                                 const MachineBasicBlock &MBB,
+                                 const TargetMachine &TM) const;
+
+  virtual MCSection *getNamedSectionForMachineBasicBlock(
+      const Function &F, const MachineBasicBlock &MBB, const TargetMachine &TM,
+      const char *Suffix) const;
 
   /// Classify the specified global variable into a set of target independent
   /// categories embodied in SectionKind.
@@ -144,6 +155,7 @@ public:
   unsigned getPersonalityEncoding() const { return PersonalityEncoding; }
   unsigned getLSDAEncoding() const { return LSDAEncoding; }
   unsigned getTTypeEncoding() const { return TTypeEncoding; }
+  unsigned getCallSiteEncoding() const { return CallSiteEncoding; }
 
   const MCExpr *getTTypeReference(const MCSymbolRefExpr *Sym, unsigned Encoding,
                                   MCStreamer &Streamer) const;
@@ -186,7 +198,8 @@ public:
   }
 
   /// Get the target specific PC relative GOT entry relocation
-  virtual const MCExpr *getIndirectSymViaGOTPCRel(const MCSymbol *Sym,
+  virtual const MCExpr *getIndirectSymViaGOTPCRel(const GlobalValue *GV,
+                                                  const MCSymbol *Sym,
                                                   const MCValue &MV,
                                                   int64_t Offset,
                                                   MachineModuleInfo *MMI,
@@ -203,6 +216,27 @@ public:
   /// If supported, return the section to use for the llvm.commandline
   /// metadata. Otherwise, return nullptr.
   virtual MCSection *getSectionForCommandLines() const {
+    return nullptr;
+  }
+
+  /// On targets that use separate function descriptor symbols, return a section
+  /// for the descriptor given its symbol. Use only with defined functions.
+  virtual MCSection *getSectionForFunctionDescriptor(const MCSymbol *S) const {
+    return nullptr;
+  }
+
+  /// On targets that support TOC entries, return a section for the entry given
+  /// the symbol it refers to.
+  /// TODO: Implement this interface for existing ELF targets.
+  virtual MCSection *getSectionForTOCEntry(const MCSymbol *S) const {
+    return nullptr;
+  }
+
+  /// On targets that associate external references with a section, return such
+  /// a section for the given external global.
+  virtual MCSection *
+  getSectionForExternalReference(const GlobalObject *GO,
+                                 const TargetMachine &TM) const {
     return nullptr;
   }
 

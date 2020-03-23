@@ -1,4 +1,4 @@
-//===-- LibStdcpp.cpp -------------------------------------------*- C++ -*-===//
+//===-- LibStdcpp.cpp -----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,11 +8,11 @@
 
 #include "LibStdcpp.h"
 
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/StringPrinter.h"
 #include "lldb/DataFormatters/VectorIterator.h"
-#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
 #include "lldb/Utility/Endian.h"
@@ -142,9 +142,9 @@ bool LibstdcppMapIteratorSyntheticFrontEnd::MightHaveChildren() { return true; }
 
 size_t LibstdcppMapIteratorSyntheticFrontEnd::GetIndexOfChildWithName(
     ConstString name) {
-  if (name == ConstString("first"))
+  if (name == "first")
     return 0;
-  if (name == ConstString("second"))
+  if (name == "second")
     return 1;
   return UINT32_MAX;
 }
@@ -224,7 +224,7 @@ bool VectorIteratorSyntheticFrontEnd::MightHaveChildren() { return true; }
 
 size_t VectorIteratorSyntheticFrontEnd::GetIndexOfChildWithName(
     ConstString name) {
-  if (name == ConstString("item"))
+  if (name == "item")
     return 0;
   return UINT32_MAX;
 }
@@ -259,6 +259,7 @@ bool lldb_private::formatters::LibStdcppStringSummaryProvider(
       if (error.Fail())
         return false;
       options.SetSourceSize(size_of_data);
+      options.SetHasSourceSize(true);
 
       if (!StringPrinter::ReadStringAndDumpToStream<
               StringPrinter::StringElementType::UTF8>(options)) {
@@ -319,6 +320,7 @@ bool lldb_private::formatters::LibStdcppWStringSummaryProvider(
       if (error.Fail())
         return false;
       options.SetSourceSize(size_of_data);
+      options.SetHasSourceSize(true);
       options.SetPrefixToken("L");
 
       switch (wchar_size) {
@@ -374,7 +376,7 @@ bool LibStdcppSharedPtrSyntheticFrontEnd::MightHaveChildren() { return true; }
 
 size_t LibStdcppSharedPtrSyntheticFrontEnd::GetIndexOfChildWithName(
     ConstString name) {
-  if (name == ConstString("_M_ptr"))
+  if (name == "_M_ptr")
     return 0;
   return UINT32_MAX;
 }

@@ -109,8 +109,8 @@ CXCursor cxcursor::MakeCXCursor(const Decl *D, CXTranslationUnit TU,
         RegionOfInterest.getBegin() == RegionOfInterest.getEnd()) {
       SmallVector<SourceLocation, 16> SelLocs;
       cast<ObjCMethodDecl>(D)->getSelectorLocs(SelLocs);
-      SmallVectorImpl<SourceLocation>::iterator
-        I=std::find(SelLocs.begin(), SelLocs.end(),RegionOfInterest.getBegin());
+      SmallVectorImpl<SourceLocation>::iterator I =
+          llvm::find(SelLocs, RegionOfInterest.getBegin());
       if (I != SelLocs.end())
         SelectorIdIndex = I - SelLocs.begin();
     }
@@ -256,12 +256,15 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::BinaryConditionalOperatorClass:
   case Stmt::TypeTraitExprClass:
   case Stmt::CoawaitExprClass:
+  case Stmt::ConceptSpecializationExprClass:
+  case Stmt::RequiresExprClass:
   case Stmt::DependentCoawaitExprClass:
   case Stmt::CoyieldExprClass:
   case Stmt::CXXBindTemporaryExprClass:
   case Stmt::CXXDefaultArgExprClass:
   case Stmt::CXXDefaultInitExprClass:
   case Stmt::CXXFoldExprClass:
+  case Stmt::CXXRewrittenBinaryOperatorClass:
   case Stmt::CXXStdInitializerListExprClass:
   case Stmt::CXXScalarValueInitExprClass:
   case Stmt::CXXUuidofExprClass:
@@ -282,6 +285,7 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::ParenListExprClass:
   case Stmt::PredefinedExprClass:
   case Stmt::ShuffleVectorExprClass:
+  case Stmt::SourceLocExprClass:
   case Stmt::ConvertVectorExprClass:
   case Stmt::VAArgExprClass:
   case Stmt::ObjCArrayLiteralClass:
@@ -562,8 +566,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
         RegionOfInterest.getBegin() == RegionOfInterest.getEnd()) {
       SmallVector<SourceLocation, 16> SelLocs;
       cast<ObjCMessageExpr>(S)->getSelectorLocs(SelLocs);
-      SmallVectorImpl<SourceLocation>::iterator
-        I=std::find(SelLocs.begin(), SelLocs.end(),RegionOfInterest.getBegin());
+      SmallVectorImpl<SourceLocation>::iterator I =
+          llvm::find(SelLocs, RegionOfInterest.getBegin());
       if (I != SelLocs.end())
         SelectorIdIndex = I - SelLocs.begin();
     }
@@ -607,6 +611,9 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPParallelForSimdDirectiveClass:
     K = CXCursor_OMPParallelForSimdDirective;
     break;
+  case Stmt::OMPParallelMasterDirectiveClass:
+    K = CXCursor_OMPParallelMasterDirective;
+    break;
   case Stmt::OMPParallelSectionsDirectiveClass:
     K = CXCursor_OMPParallelSectionsDirective;
     break;
@@ -627,6 +634,12 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
   case Stmt::OMPFlushDirectiveClass:
     K = CXCursor_OMPFlushDirective;
+    break;
+  case Stmt::OMPDepobjDirectiveClass:
+    K = CXCursor_OMPDepobjDirective;
+    break;
+  case Stmt::OMPScanDirectiveClass:
+    K = CXCursor_OMPScanDirective;
     break;
   case Stmt::OMPOrderedDirectiveClass:
     K = CXCursor_OMPOrderedDirective;
@@ -669,6 +682,18 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
     break;
   case Stmt::OMPTaskLoopSimdDirectiveClass:
     K = CXCursor_OMPTaskLoopSimdDirective;
+    break;
+  case Stmt::OMPMasterTaskLoopDirectiveClass:
+    K = CXCursor_OMPMasterTaskLoopDirective;
+    break;
+  case Stmt::OMPMasterTaskLoopSimdDirectiveClass:
+    K = CXCursor_OMPMasterTaskLoopSimdDirective;
+    break;
+  case Stmt::OMPParallelMasterTaskLoopDirectiveClass:
+    K = CXCursor_OMPParallelMasterTaskLoopDirective;
+    break;
+  case Stmt::OMPParallelMasterTaskLoopSimdDirectiveClass:
+    K = CXCursor_OMPParallelMasterTaskLoopSimdDirective;
     break;
   case Stmt::OMPDistributeDirectiveClass:
     K = CXCursor_OMPDistributeDirective;
@@ -715,6 +740,8 @@ CXCursor cxcursor::MakeCXCursor(const Stmt *S, const Decl *Parent,
   case Stmt::OMPTargetTeamsDistributeSimdDirectiveClass:
     K = CXCursor_OMPTargetTeamsDistributeSimdDirective;
     break;
+  case Stmt::BuiltinBitCastExprClass:
+    K = CXCursor_BuiltinBitCastExpr;
   }
 
   CXCursor C = { K, 0, { Parent, S, TU } };

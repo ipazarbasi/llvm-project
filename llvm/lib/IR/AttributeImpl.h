@@ -29,6 +29,7 @@
 namespace llvm {
 
 class LLVMContext;
+class Type;
 
 //===----------------------------------------------------------------------===//
 /// \class
@@ -41,7 +42,8 @@ protected:
   enum AttrEntryKind {
     EnumAttrEntry,
     IntAttrEntry,
-    StringAttrEntry
+    StringAttrEntry,
+    TypeAttrEntry,
   };
 
   AttributeImpl(AttrEntryKind KindID) : KindID(KindID) {}
@@ -56,6 +58,7 @@ public:
   bool isEnumAttribute() const { return KindID == EnumAttrEntry; }
   bool isIntAttribute() const { return KindID == IntAttrEntry; }
   bool isStringAttribute() const { return KindID == StringAttrEntry; }
+  bool isTypeAttribute() const { return KindID == TypeAttrEntry; }
 
   bool hasAttribute(Attribute::AttrKind A) const;
   bool hasAttribute(StringRef Kind) const;
@@ -66,16 +69,20 @@ public:
   StringRef getKindAsString() const;
   StringRef getValueAsString() const;
 
+  Type *getValueAsType() const;
+
   /// Used when sorting the attributes.
   bool operator<(const AttributeImpl &AI) const;
 
   void Profile(FoldingSetNodeID &ID) const {
     if (isEnumAttribute())
-      Profile(ID, getKindAsEnum(), 0);
+      Profile(ID, getKindAsEnum(), static_cast<uint64_t>(0));
     else if (isIntAttribute())
       Profile(ID, getKindAsEnum(), getValueAsInt());
-    else
+    else if (isStringAttribute())
       Profile(ID, getKindAsString(), getValueAsString());
+    else
+      Profile(ID, getKindAsEnum(), getValueAsType());
   }
 
   static void Profile(FoldingSetNodeID &ID, Attribute::AttrKind Kind,
@@ -87,6 +94,12 @@ public:
   static void Profile(FoldingSetNodeID &ID, StringRef Kind, StringRef Values) {
     ID.AddString(Kind);
     if (!Values.empty()) ID.AddString(Values);
+  }
+
+  static void Profile(FoldingSetNodeID &ID, Attribute::AttrKind Kind,
+                      Type *Ty) {
+    ID.AddInteger(Kind);
+    ID.AddPointer(Ty);
   }
 };
 
@@ -121,10 +134,7 @@ class IntAttributeImpl : public EnumAttributeImpl {
 public:
   IntAttributeImpl(Attribute::AttrKind Kind, uint64_t Val)
       : EnumAttributeImpl(IntAttrEntry, Kind), Val(Val) {
-    assert((Kind == Attribute::Alignment || Kind == Attribute::StackAlignment ||
-            Kind == Attribute::Dereferenceable ||
-            Kind == Attribute::DereferenceableOrNull ||
-            Kind == Attribute::AllocSize) &&
+    assert(Attribute::doesAttrKindHaveArgument(Kind) &&
            "Wrong kind for int attribute!");
   }
 
@@ -139,10 +149,23 @@ class StringAttributeImpl : public AttributeImpl {
 
 public:
   StringAttributeImpl(StringRef Kind, StringRef Val = StringRef())
-      : AttributeImpl(StringAttrEntry), Kind(Kind), Val(Val) {}
+      : AttributeImpl(StringAttrEntry), Kind(std::string(Kind)),
+        Val(std::string(Val)) {}
 
   StringRef getStringKind() const { return Kind; }
   StringRef getStringValue() const { return Val; }
+};
+
+class TypeAttributeImpl : public EnumAttributeImpl {
+  void anchor() override;
+
+  Type *Ty;
+
+public:
+  TypeAttributeImpl(Attribute::AttrKind Kind, Type *Ty)
+      : EnumAttributeImpl(TypeAttrEntry, Kind), Ty(Ty) {}
+
+  Type *getTypeValue() const { return Ty; }
 };
 
 //===----------------------------------------------------------------------===//
@@ -154,9 +177,9 @@ class AttributeSetNode final
       private TrailingObjects<AttributeSetNode, Attribute> {
   friend TrailingObjects;
 
-  /// Bitset with a bit for each available attribute Attribute::AttrKind.
-  uint64_t AvailableAttrs;
   unsigned NumAttrs; ///< Number of attributes in this node.
+  /// Bitset with a bit for each available attribute Attribute::AttrKind.
+  uint8_t AvailableAttrs[12] = {};
 
   AttributeSetNode(ArrayRef<Attribute> Attrs);
 
@@ -175,7 +198,7 @@ public:
   unsigned getNumAttributes() const { return NumAttrs; }
 
   bool hasAttribute(Attribute::AttrKind Kind) const {
-    return AvailableAttrs & ((uint64_t)1) << Kind;
+    return AvailableAttrs[Kind / 8] & ((uint64_t)1) << (Kind % 8);
   }
   bool hasAttribute(StringRef Kind) const;
   bool hasAttributes() const { return NumAttrs != 0; }
@@ -183,12 +206,13 @@ public:
   Attribute getAttribute(Attribute::AttrKind Kind) const;
   Attribute getAttribute(StringRef Kind) const;
 
-  unsigned getAlignment() const;
-  unsigned getStackAlignment() const;
+  MaybeAlign getAlignment() const;
+  MaybeAlign getStackAlignment() const;
   uint64_t getDereferenceableBytes() const;
   uint64_t getDereferenceableOrNullBytes() const;
   std::pair<unsigned, Optional<unsigned>> getAllocSizeArgs() const;
   std::string getAsString(bool InAttrGrp) const;
+  Type *getByValType() const;
 
   using iterator = const Attribute *;
 
@@ -218,10 +242,10 @@ class AttributeListImpl final
   friend TrailingObjects;
 
 private:
-  /// Bitset with a bit for each available attribute Attribute::AttrKind.
-  uint64_t AvailableFunctionAttrs;
   LLVMContext &Context;
   unsigned NumAttrSets; ///< Number of entries in this set.
+  /// Bitset with a bit for each available attribute Attribute::AttrKind.
+  uint8_t AvailableFunctionAttrs[12] = {};
 
   // Helper fn for TrailingObjects class.
   size_t numTrailingObjects(OverloadToken<AttributeSet>) { return NumAttrSets; }
@@ -241,7 +265,7 @@ public:
   /// Return true if the AttributeSet or the FunctionIndex has an
   /// enum attribute of the given kind.
   bool hasFnAttribute(Attribute::AttrKind Kind) const {
-    return AvailableFunctionAttrs & ((uint64_t)1) << Kind;
+    return AvailableFunctionAttrs[Kind / 8] & ((uint64_t)1) << (Kind % 8);
   }
 
   using iterator = const AttributeSet *;

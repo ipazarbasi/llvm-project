@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ValueObjectConstResultImpl_h_
-#define liblldb_ValueObjectConstResultImpl_h_
+#ifndef LLDB_CORE_VALUEOBJECTCONSTRESULTIMPL_H
+#define LLDB_CORE_VALUEOBJECTCONSTRESULTIMPL_H
 
 #include "lldb/Utility/ConstString.h"
 #include "lldb/lldb-defines.h"
@@ -19,24 +19,16 @@
 #include <stdint.h>
 namespace lldb_private {
 class CompilerType;
-}
-namespace lldb_private {
 class DataExtractor;
-}
-namespace lldb_private {
 class Status;
-}
-namespace lldb_private {
 class ValueObject;
 }
 
 namespace lldb_private {
 
-//----------------------------------------------------------------------
 // A class wrapping common implementation details for operations in
 // ValueObjectConstResult ( & Child ) that may need to jump from the host
 // memory space into the target's memory space
-//----------------------------------------------------------------------
 class ValueObjectConstResultImpl {
 public:
   ValueObjectConstResultImpl(ValueObject *valobj,
@@ -84,4 +76,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_ValueObjectConstResultImpl_h_
+#endif // LLDB_CORE_VALUEOBJECTCONSTRESULTIMPL_H

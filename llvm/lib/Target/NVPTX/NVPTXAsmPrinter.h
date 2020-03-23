@@ -200,20 +200,18 @@ private:
   const Function *F;
   std::string CurrentFnName;
 
-  void EmitBasicBlockStart(const MachineBasicBlock &MBB) const override;
-  void EmitFunctionEntryLabel() override;
-  void EmitFunctionBodyStart() override;
-  void EmitFunctionBodyEnd() override;
+  void emitBasicBlockStart(const MachineBasicBlock &MBB) override;
+  void emitFunctionEntryLabel() override;
+  void emitFunctionBodyStart() override;
+  void emitFunctionBodyEnd() override;
   void emitImplicitDef(const MachineInstr *MI) const override;
 
-  void EmitInstruction(const MachineInstr *) override;
+  void emitInstruction(const MachineInstr *) override;
   void lowerToMCInst(const MachineInstr *MI, MCInst &OutMI);
   bool lowerOperand(const MachineOperand &MO, MCOperand &MCOp);
   MCOperand GetSymbolRef(const MCSymbol *Symbol);
   unsigned encodeVirtualRegister(unsigned Reg);
 
-  void printVecModifiedImmediate(const MachineOperand &MO, const char *Modifier,
-                                 raw_ostream &O);
   void printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
                        const char *Modifier = nullptr);
   void printModuleLevelGV(const GlobalVariable *GVar, raw_ostream &O,
@@ -230,13 +228,10 @@ private:
   void printReturnValStr(const Function *, raw_ostream &O);
   void printReturnValStr(const MachineFunction &MF, raw_ostream &O);
   bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
-                       unsigned AsmVariant, const char *ExtraCode,
-                       raw_ostream &) override;
-  void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
-                    const char *Modifier = nullptr);
+                       const char *ExtraCode, raw_ostream &) override;
+  void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
   bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
-                             unsigned AsmVariant, const char *ExtraCode,
-                             raw_ostream &) override;
+                             const char *ExtraCode, raw_ostream &) override;
 
   const MCExpr *lowerConstantForGV(const Constant *CV, bool ProcessingGeneric);
   void printMCExpr(const MCExpr &Expr, raw_ostream &OS);

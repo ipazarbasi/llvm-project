@@ -1,4 +1,4 @@
-//===-- ClangParserTest.cpp --------------------------------------*- C++-*-===//
+//===-- ClangParserTest.cpp -----------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -9,6 +9,7 @@
 #include "clang/Basic/Version.h"
 
 #include "Plugins/ExpressionParser/Clang/ClangHost.h"
+#include "TestingSupport/SubsystemRAII.h"
 #include "TestingSupport/TestUtilities.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/HostInfo.h"
@@ -20,14 +21,7 @@ using namespace lldb_private;
 
 namespace {
 struct ClangHostTest : public testing::Test {
-  static void SetUpTestCase() {
-    FileSystem::Initialize();
-    HostInfo::Initialize();
-  }
-  static void TearDownTestCase() {
-    HostInfo::Terminate();
-    FileSystem::Terminate();
-  }
+  SubsystemRAII<FileSystem, HostInfo> subsystems;
 };
 } // namespace
 
@@ -50,9 +44,8 @@ TEST_F(ClangHostTest, ComputeClangResourceDirectory) {
   EXPECT_EQ(ComputeClangResourceDir(path_to_liblldb), path_to_clang_dir);
 
   // The path doesn't really exist, so setting verify to true should make
-  // ComputeClangResourceDir to not give you path_to_clang_dir.
-  EXPECT_NE(ComputeClangResourceDir(path_to_liblldb, true),
-            ComputeClangResourceDir(path_to_liblldb));
+  // ComputeClangResourceDir not give you path_to_clang_dir.
+  EXPECT_NE(ComputeClangResourceDir(path_to_liblldb, true), path_to_clang_dir);
 }
 
 #if defined(__APPLE__)

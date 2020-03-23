@@ -10,6 +10,16 @@
 #ifndef HEADER
 #define HEADER
 
+typedef void **omp_allocator_handle_t;
+extern const omp_allocator_handle_t omp_default_mem_alloc;
+extern const omp_allocator_handle_t omp_large_cap_mem_alloc;
+extern const omp_allocator_handle_t omp_const_mem_alloc;
+extern const omp_allocator_handle_t omp_high_bw_mem_alloc;
+extern const omp_allocator_handle_t omp_low_lat_mem_alloc;
+extern const omp_allocator_handle_t omp_cgroup_mem_alloc;
+extern const omp_allocator_handle_t omp_pteam_mem_alloc;
+extern const omp_allocator_handle_t omp_thread_mem_alloc;
+
 // CHECK: [[PRIVATES:%.+]] = type { i8*, i8* }
 
 struct S {
@@ -31,7 +41,7 @@ int main(int argc, char **argv) {
   {
 #pragma omp taskgroup task_reduction(-:c, d)
 #pragma omp parallel
-#pragma omp task in_reduction(+:a) in_reduction(-:d)
+#pragma omp task in_reduction(+:a) in_reduction(-:d) allocate(omp_high_bw_mem_alloc: d)
     a += d[a];
   }
   return 0;
@@ -53,14 +63,10 @@ int main(int argc, char **argv) {
 // CHECK-NEXT:  [[TASK_T_WITH_PRIVS:%.+]] = bitcast i8* [[TASK_T]] to [[T]]*
 // CHECK:       [[PRIVS:%.+]] = getelementptr inbounds [[T]], [[T]]* [[TASK_T_WITH_PRIVS]], i32 0, i32 1
 // CHECK:       [[TD1_REF:%.+]] = getelementptr inbounds [[PRIVATES]], [[PRIVATES]]* [[PRIVS]], i32 0, i32 0
-// CHECK-NEXT:  [[TD1_SHAR:%.+]] = getelementptr inbounds %
-// CHECK-NEXT:  [[TD1_ADDR:%.+]] = load i8**, i8*** [[TD1_SHAR]],
-// CHECK-NEXT:  [[TD1:%.+]] = load i8*, i8** [[TD1_ADDR]],
+// CHECK-NEXT:  [[TD1:%.+]] = load i8*, i8** %{{.+}},
 // CHECK-NEXT:  store i8* [[TD1]], i8** [[TD1_REF]],
 // CHECK-NEXT:  [[TD2_REF:%.+]] = getelementptr inbounds [[PRIVATES]], [[PRIVATES]]* [[PRIVS]], i32 0, i32 1
-// CHECK-NEXT:  [[TD2_SHAR:%.+]] = getelementptr inbounds %
-// CHECK-NEXT:  [[TD2_ADDR:%.+]] = load i8**, i8*** [[TD2_SHAR]],
-// CHECK-NEXT:  [[TD2:%.+]] = load i8*, i8** [[TD2_ADDR]],
+// CHECK-NEXT:  [[TD2:%.+]] = load i8*, i8** %{{.+}},
 // CHECK-NEXT:  store i8* [[TD2]], i8** [[TD2_REF]],
 // CHECK-NEXT:  call i32 @__kmpc_omp_task(%struct.ident_t* @0, i32 [[GTID]], i8* [[TASK_T]])
 // CHECK-NEXT:  ret void

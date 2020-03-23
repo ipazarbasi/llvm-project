@@ -27,9 +27,6 @@ ReplaceRandomShuffleCheck::ReplaceRandomShuffleCheck(StringRef Name,
           Options.getLocalOrGlobal("IncludeStyle", "llvm"))) {}
 
 void ReplaceRandomShuffleCheck::registerMatchers(MatchFinder *Finder) {
-  if (!getLangOpts().CPlusPlus11)
-    return;
-
   const auto Begin = hasArgument(0, expr());
   const auto End = hasArgument(1, expr());
   const auto RandomFunc = hasArgument(2, expr().bind("randomFunc"));
@@ -43,11 +40,10 @@ void ReplaceRandomShuffleCheck::registerMatchers(MatchFinder *Finder) {
 }
 
 void ReplaceRandomShuffleCheck::registerPPCallbacks(
-    CompilerInstance &Compiler) {
-  IncludeInserter = llvm::make_unique<utils::IncludeInserter>(
-      Compiler.getSourceManager(), Compiler.getLangOpts(), IncludeStyle);
-  Compiler.getPreprocessor().addPPCallbacks(
-      IncludeInserter->CreatePPCallbacks());
+    const SourceManager &SM, Preprocessor *PP, Preprocessor *ModuleExpanderPP) {
+  IncludeInserter = std::make_unique<utils::IncludeInserter>(SM, getLangOpts(),
+                                                              IncludeStyle);
+  PP->addPPCallbacks(IncludeInserter->CreatePPCallbacks());
 }
 
 void ReplaceRandomShuffleCheck::storeOptions(

@@ -50,7 +50,7 @@ void StringFindStartswithCheck::registerMatchers(MatchFinder *Finder) {
   Finder->addMatcher(
       // Match [=!]= with a zero on one side and a string.find on the other.
       binaryOperator(
-          anyOf(hasOperatorName("=="), hasOperatorName("!=")),
+          hasAnyOperatorName("==", "!="),
           hasEitherOperand(ignoringParenImpCasts(ZeroLiteral)),
           hasEitherOperand(ignoringParenImpCasts(StringFind.bind("findexpr"))))
           .bind("expr"),
@@ -105,20 +105,16 @@ void StringFindStartswithCheck::check(const MatchFinder::MatchResult &Result) {
 
   // Create a preprocessor #include FixIt hint (CreateIncludeInsertion checks
   // whether this already exists).
-  auto IncludeHint = IncludeInserter->CreateIncludeInsertion(
+  Diagnostic << IncludeInserter->CreateIncludeInsertion(
       Source.getFileID(ComparisonExpr->getBeginLoc()), AbseilStringsMatchHeader,
       false);
-  if (IncludeHint) {
-    Diagnostic << *IncludeHint;
-  }
 }
 
 void StringFindStartswithCheck::registerPPCallbacks(
-    CompilerInstance &Compiler) {
-  IncludeInserter = llvm::make_unique<clang::tidy::utils::IncludeInserter>(
-      Compiler.getSourceManager(), Compiler.getLangOpts(), IncludeStyle);
-  Compiler.getPreprocessor().addPPCallbacks(
-      IncludeInserter->CreatePPCallbacks());
+    const SourceManager &SM, Preprocessor *PP, Preprocessor *ModuleExpanderPP) {
+  IncludeInserter = std::make_unique<utils::IncludeInserter>(SM, getLangOpts(),
+                                                              IncludeStyle);
+  PP->addPPCallbacks(IncludeInserter->CreatePPCallbacks());
 }
 
 void StringFindStartswithCheck::storeOptions(

@@ -1,4 +1,4 @@
-//===-- ThreadPlanCallFunctionUsingABI.cpp ----------------------*- C++ -*-===//
+//===-- ThreadPlanCallFunctionUsingABI.cpp --------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -18,10 +18,8 @@
 using namespace lldb;
 using namespace lldb_private;
 
-//--------------------------------------------------------------------------------------------
 // ThreadPlanCallFunctionUsingABI: Plan to call a single function using the ABI
 // instead of JIT
-//-------------------------------------------------------------------------------------------
 ThreadPlanCallFunctionUsingABI::ThreadPlanCallFunctionUsingABI(
     Thread &thread, const Address &function, llvm::Type &prototype,
     llvm::Type &return_type, llvm::ArrayRef<ABI::CallArgument> args,

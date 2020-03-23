@@ -111,6 +111,12 @@ public:
     return getScalarSizeInBits() * getNumElements();
   }
 
+  /// Returns the total size of the type in bytes, i.e. number of whole bytes
+  /// needed to represent the size in bits. Must only be called on sized types.
+  unsigned getSizeInBytes() const {
+    return (getSizeInBits() + 7) / 8;
+  }
+
   LLT getScalarType() const {
     return isVector() ? getElementType() : *this;
   }
@@ -130,6 +136,14 @@ public:
     return isVector() ? LLT::vector(getNumElements(), NewEltSize)
                       : LLT::scalar(NewEltSize);
   }
+
+  /// Return a vector or scalar with the same element type and the new number of
+  /// elements.
+  LLT changeNumElements(unsigned NewNumElts) const {
+    return LLT::scalarOrVector(NewNumElts, getScalarType());
+  }
+
+  bool isByteSized() const { return (getSizeInBits() & 7) == 0; }
 
   unsigned getScalarSizeInBits() const {
     assert(RawData != 0 && "Invalid Type");

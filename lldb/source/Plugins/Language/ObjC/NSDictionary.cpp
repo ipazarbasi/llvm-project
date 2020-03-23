@@ -1,4 +1,4 @@
-//===-- NSDictionary.cpp ----------------------------------------*- C++ -*-===//
+//===-- NSDictionary.cpp --------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -13,13 +13,12 @@
 #include "NSDictionary.h"
 
 #include "Plugins/LanguageRuntime/ObjC/AppleObjCRuntime/AppleObjCRuntime.h"
+#include "Plugins/TypeSystem/Clang/TypeSystemClang.h"
 
 #include "lldb/Core/ValueObject.h"
 #include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
-#include "lldb/Symbol/ClangASTContext.h"
 #include "lldb/Target/Language.h"
-#include "lldb/Target/ObjCLanguageRuntime.h"
 #include "lldb/Target/StackFrame.h"
 #include "lldb/Target/Target.h"
 #include "lldb/Utility/DataBufferHeap.h"
@@ -66,7 +65,7 @@ NSDictionary_Additionals::GetAdditionalSynthetics() {
 static CompilerType GetLLDBNSPairType(TargetSP target_sp) {
   CompilerType compiler_type;
 
-  ClangASTContext *target_ast_context = target_sp->GetScratchClangASTContext();
+  TypeSystemClang *target_ast_context = TypeSystemClang::GetScratch(*target_sp);
 
   if (target_ast_context) {
     ConstString g___lldb_autogen_nspair("__lldb_autogen_nspair");
@@ -81,14 +80,14 @@ static CompilerType GetLLDBNSPairType(TargetSP target_sp) {
           clang::TTK_Struct, lldb::eLanguageTypeC);
 
       if (compiler_type) {
-        ClangASTContext::StartTagDeclarationDefinition(compiler_type);
+        TypeSystemClang::StartTagDeclarationDefinition(compiler_type);
         CompilerType id_compiler_type =
             target_ast_context->GetBasicType(eBasicTypeObjCID);
-        ClangASTContext::AddFieldToRecordType(
+        TypeSystemClang::AddFieldToRecordType(
             compiler_type, "key", id_compiler_type, lldb::eAccessPublic, 0);
-        ClangASTContext::AddFieldToRecordType(
+        TypeSystemClang::AddFieldToRecordType(
             compiler_type, "value", id_compiler_type, lldb::eAccessPublic, 0);
-        ClangASTContext::CompleteTagDeclarationDefinition(compiler_type);
+        TypeSystemClang::CompleteTagDeclarationDefinition(compiler_type);
       }
     }
   }
@@ -347,9 +346,7 @@ bool lldb_private::formatters::NSDictionarySummaryProvider(
   if (!process_sp)
     return false;
 
-  ObjCLanguageRuntime *runtime =
-      (ObjCLanguageRuntime *)process_sp->GetLanguageRuntime(
-          lldb::eLanguageTypeObjC);
+  ObjCLanguageRuntime *runtime = ObjCLanguageRuntime::Get(*process_sp);
 
   if (!runtime)
     return false;
@@ -439,8 +436,8 @@ lldb_private::formatters::NSDictionarySyntheticFrontEndCreator(
   lldb::ProcessSP process_sp(valobj_sp->GetProcessSP());
   if (!process_sp)
     return nullptr;
-  AppleObjCRuntime *runtime =
-      llvm::dyn_cast_or_null<AppleObjCRuntime>(process_sp->GetObjCLanguageRuntime());
+  AppleObjCRuntime *runtime = llvm::dyn_cast_or_null<AppleObjCRuntime>(
+      ObjCLanguageRuntime::Get(*process_sp));
   if (!runtime)
     return nullptr;
 

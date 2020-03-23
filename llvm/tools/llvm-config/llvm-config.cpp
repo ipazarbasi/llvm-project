@@ -291,8 +291,8 @@ int main(int argc, char **argv) {
     IsInDevelopmentTree = true;
     DevelopmentTreeLayout = CMakeStyle;
     ActiveObjRoot = LLVM_OBJ_ROOT;
-  } else if (sys::fs::equivalent(CurrentExecPrefix,
-                                 Twine(LLVM_OBJ_ROOT) + "/bin")) {
+  } else if (sys::fs::equivalent(sys::path::parent_path(CurrentExecPrefix),
+                                 LLVM_OBJ_ROOT)) {
     IsInDevelopmentTree = true;
     DevelopmentTreeLayout = CMakeBuildModeStyle;
     ActiveObjRoot = LLVM_OBJ_ROOT;
@@ -319,11 +319,14 @@ int main(int argc, char **argv) {
       ActiveCMakeDir = ActiveLibDir + "/cmake/llvm";
       break;
     case CMakeBuildModeStyle:
+      // FIXME: Should we consider the build-mode-specific path as the prefix?
       ActivePrefix = ActiveObjRoot;
-      ActiveBinDir = ActiveObjRoot + "/bin/" + build_mode;
+      ActiveBinDir = ActiveObjRoot + "/" + build_mode + "/bin";
       ActiveLibDir =
-          ActiveObjRoot + "/lib" + LLVM_LIBDIR_SUFFIX + "/" + build_mode;
-      ActiveCMakeDir = ActiveLibDir + "/cmake/llvm";
+          ActiveObjRoot + "/" + build_mode + "/lib" + LLVM_LIBDIR_SUFFIX;
+      // The CMake directory isn't separated by build mode.
+      ActiveCMakeDir =
+          ActivePrefix + "/lib" + LLVM_LIBDIR_SUFFIX + "/cmake/llvm";
       break;
     }
 
@@ -335,7 +338,7 @@ int main(int argc, char **argv) {
     ActiveIncludeDir = ActivePrefix + "/include";
     SmallString<256> path(StringRef(LLVM_TOOLS_INSTALL_DIR));
     sys::fs::make_absolute(ActivePrefix, path);
-    ActiveBinDir = path.str();
+    ActiveBinDir = std::string(path.str());
     ActiveLibDir = ActivePrefix + "/lib" + LLVM_LIBDIR_SUFFIX;
     ActiveCMakeDir = ActiveLibDir + "/cmake/llvm";
     ActiveIncludeOption = "-I" + ActiveIncludeDir;
@@ -349,7 +352,8 @@ int main(int argc, char **argv) {
   /// in the first place. This can't be done at configure/build time.
 
   StringRef SharedExt, SharedVersionedExt, SharedDir, SharedPrefix, StaticExt,
-      StaticPrefix, StaticDir = "lib", DirSep = "/";
+      StaticPrefix, StaticDir = "lib";
+  std::string DirSep = "/";
   const Triple HostTriple(Triple::normalize(LLVM_HOST_TRIPLE));
   if (HostTriple.isOSWindows()) {
     SharedExt = "dll";
@@ -446,7 +450,7 @@ int main(int argc, char **argv) {
         // already has the necessary prefix and suffix (e.g. `.so`) added so
         // just return it unmodified.
         assert(Lib.endswith(SharedExt) && "DyLib is missing suffix");
-        LibFileName = Lib;
+        LibFileName = std::string(Lib);
       } else {
         LibFileName = (SharedPrefix + Lib + "." + SharedExt).str();
       }

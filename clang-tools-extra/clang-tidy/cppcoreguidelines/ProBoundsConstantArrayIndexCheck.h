@@ -28,7 +28,11 @@ class ProBoundsConstantArrayIndexCheck : public ClangTidyCheck {
 
 public:
   ProBoundsConstantArrayIndexCheck(StringRef Name, ClangTidyContext *Context);
-  void registerPPCallbacks(CompilerInstance &Compiler) override;
+  bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
+    return LangOpts.CPlusPlus;
+  }
+  void registerPPCallbacks(const SourceManager &SM, Preprocessor *PP,
+                           Preprocessor *ModuleExpanderPP) override;
   void registerMatchers(ast_matchers::MatchFinder *Finder) override;
   void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
   void check(const ast_matchers::MatchFinder::MatchResult &Result) override;

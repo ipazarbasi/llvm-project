@@ -1,11 +1,16 @@
 set(LLVM_LINK_COMPONENTS
-  ${LLVM_TARGETS_TO_BUILD}
+  AllTargetsAsmParsers
+  AllTargetsCodeGens
+  AllTargetsDescs
+  AllTargetsInfos
   BitReader
+  CodeGen
   Core
   Linker
   LTO
   MC
   Object
+  Passes
   Support
   Target
   )

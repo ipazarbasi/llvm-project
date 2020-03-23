@@ -221,9 +221,7 @@ class apply_variadic {
   static StringRef apply_one(StringRef S) { return S.drop_back(); }
 
 public:
-  template <typename... Ts>
-  auto operator()(Ts &&... Items)
-      -> decltype(std::make_tuple(apply_one(Items)...)) {
+  template <typename... Ts> auto operator()(Ts &&... Items) {
     return std::make_tuple(apply_one(Items)...);
   }
 };
@@ -380,6 +378,19 @@ TEST(STLExtrasTest, EmptyTest) {
   EXPECT_FALSE(llvm::empty(R1));
 }
 
+TEST(STLExtrasTest, DropBeginTest) {
+  SmallVector<int, 5> vec{0, 1, 2, 3, 4};
+
+  for (int n = 0; n < 5; ++n) {
+    int i = n;
+    for (auto &v : drop_begin(vec, n)) {
+      EXPECT_EQ(v, i);
+      i += 1;
+    }
+    EXPECT_EQ(i, 5);
+  }
+}
+
 TEST(STLExtrasTest, EarlyIncrementTest) {
   std::list<int> L = {1, 2, 3, 4};
 
@@ -451,7 +462,7 @@ TEST(STLExtrasTest, to_address) {
   EXPECT_EQ(V1, to_address(V1));
 
   // Check fancy pointer overload for unique_ptr
-  std::unique_ptr<int> V2 = make_unique<int>(0);
+  std::unique_ptr<int> V2 = std::make_unique<int>(0);
   EXPECT_EQ(V2.get(), to_address(V2));
 
   V2.reset(V1);
@@ -467,6 +478,16 @@ TEST(STLExtrasTest, to_address) {
 
   V3.reset(V1);
   EXPECT_EQ(V1, to_address(V3));
+}
+
+TEST(STLExtrasTest, partition_point) {
+  std::vector<int> V = {1, 3, 5, 7, 9};
+
+  // Range version.
+  EXPECT_EQ(V.begin() + 3,
+            partition_point(V, [](unsigned X) { return X < 7; }));
+  EXPECT_EQ(V.begin(), partition_point(V, [](unsigned X) { return X < 1; }));
+  EXPECT_EQ(V.end(), partition_point(V, [](unsigned X) { return X < 50; }));
 }
 
 } // namespace

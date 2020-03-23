@@ -1,4 +1,4 @@
-//===-- SBLanguageRuntime.cpp -----------------------------------*- C++ -*-===//
+//===-- SBLanguageRuntime.cpp ---------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,4 +29,18 @@ SBLanguageRuntime::GetNameForLanguageType(lldb::LanguageType language) {
                             language);
 
   return Language::GetNameForLanguageType(language);
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBLanguageRuntime>(Registry &R) {
+  LLDB_REGISTER_STATIC_METHOD(lldb::LanguageType, SBLanguageRuntime,
+                              GetLanguageTypeFromString, (const char *));
+  LLDB_REGISTER_STATIC_METHOD(const char *, SBLanguageRuntime,
+                              GetNameForLanguageType, (lldb::LanguageType));
+}
+
+}
 }

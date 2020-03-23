@@ -13,6 +13,8 @@ llvm_canonicalize_cmake_booleans(
   LLVM_TOOL_LTO_BUILD
   LLVM_USE_INTEL_JITEVENTS
   LLVM_BUILD_EXAMPLES
+  LLVM_ENABLE_PLUGINS
+  LLVM_BYE_LINK_INTO_TOOLS
   )
 
 configure_lit_site_cfg(
@@ -28,11 +30,6 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/Unit/lit.cfg.py
   )
 
-# Don't include check-llvm into check-all without LLVM_BUILD_TOOLS.
-if(NOT LLVM_BUILD_TOOLS)
-  set(EXCLUDE_FROM_ALL ON)
-endif()
-
 # Set the depends list as a variable so that it can grow conditionally.
 # NOTE: Sync the substitutions in test/lit.cfg when adding to this list.
 set(LLVM_TEST_DEPENDS
@@ -45,6 +42,7 @@ set(LLVM_TEST_DEPENDS
           llc
           lli
           lli-child-target
+          llvm-addr2line
           llvm-ar
           llvm-as
           llvm-bcanalyzer
@@ -66,12 +64,19 @@ set(LLVM_TEST_DEPENDS
           llvm-elfabi
           llvm-exegesis
           llvm-extract
+          llvm-gsymutil
           llvm-isel-fuzzer
+          llvm-ifs
+          llvm-install-name-tool
+          llvm-jitlink
           llvm-lib
           llvm-link
+          llvm-lipo
+          llvm-locstats
           llvm-lto2
           llvm-mc
           llvm-mca
+          llvm-ml
           llvm-modextract
           llvm-mt
           llvm-nm
@@ -85,6 +90,7 @@ set(LLVM_TEST_DEPENDS
           llvm-rc
           llvm-readobj
           llvm-readelf
+          llvm-reduce
           llvm-rtdyld
           llvm-size
           llvm-split
@@ -127,6 +133,7 @@ endif()
 
 if(LLVM_BUILD_EXAMPLES)
   list(APPEND LLVM_TEST_DEPENDS
+    Bye
     Kaleidoscope-Ch3
     Kaleidoscope-Ch4
     Kaleidoscope-Ch5
@@ -162,13 +169,21 @@ endif()
 add_custom_target(llvm-test-depends DEPENDS ${LLVM_TEST_DEPENDS})
 set_target_properties(llvm-test-depends PROPERTIES FOLDER "Tests")
 
+if(LLVM_BUILD_TOOLS)
+  set(exclude_from_check_all "")
+else()
+  set(exclude_from_check_all "EXCLUDE_FROM_CHECK_ALL")
+endif()
+
 add_lit_testsuite(check-llvm "Running the LLVM regression tests"
   ${CMAKE_CURRENT_BINARY_DIR}
+  ${exclude_from_check_all}
   DEPENDS ${LLVM_TEST_DEPENDS}
   )
 set_target_properties(check-llvm PROPERTIES FOLDER "Tests")
 
 add_lit_testsuites(LLVM ${CMAKE_CURRENT_SOURCE_DIR}
+  ${exclude_from_check_all}
   DEPENDS ${LLVM_TEST_DEPENDS}
   )
 

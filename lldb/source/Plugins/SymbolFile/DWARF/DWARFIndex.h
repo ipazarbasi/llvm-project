@@ -6,14 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_DWARFINDEX_H
-#define LLDB_DWARFINDEX_H
+#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFINDEX_H
+#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFINDEX_H
 
 #include "Plugins/SymbolFile/DWARF/DIERef.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"
 #include "Plugins/SymbolFile/DWARF/DWARFFormValue.h"
 
-class DWARFDebugInfo;
 class DWARFDeclContext;
 class DWARFDIE;
 
@@ -40,15 +39,14 @@ public:
   virtual void GetTypes(ConstString name, DIEArray &offsets) = 0;
   virtual void GetTypes(const DWARFDeclContext &context, DIEArray &offsets) = 0;
   virtual void GetNamespaces(ConstString name, DIEArray &offsets) = 0;
-  virtual void GetFunctions(ConstString name, DWARFDebugInfo &info,
+  virtual void GetFunctions(ConstString name, SymbolFileDWARF &dwarf,
                             const CompilerDeclContext &parent_decl_ctx,
                             uint32_t name_type_mask,
                             std::vector<DWARFDIE> &dies) = 0;
   virtual void GetFunctions(const RegularExpression &regex,
                             DIEArray &offsets) = 0;
 
-  virtual void ReportInvalidDIEOffset(dw_offset_t offset,
-                                      llvm::StringRef name) = 0;
+  virtual void ReportInvalidDIERef(const DIERef &ref, llvm::StringRef name) = 0;
   virtual void Dump(Stream &s) = 0;
 
 protected:
@@ -59,10 +57,10 @@ protected:
   /// "parent_decl_ctx" and "name_type_mask", it is inserted into the "dies"
   /// vector.
   void ProcessFunctionDIE(llvm::StringRef name, DIERef ref,
-                          DWARFDebugInfo &info,
+                          SymbolFileDWARF &dwarf,
                           const CompilerDeclContext &parent_decl_ctx,
                           uint32_t name_type_mask, std::vector<DWARFDIE> &dies);
 };
 } // namespace lldb_private
 
-#endif // LLDB_DWARFINDEX_H
+#endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_DWARFINDEX_H

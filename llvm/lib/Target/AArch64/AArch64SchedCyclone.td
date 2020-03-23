@@ -18,7 +18,7 @@ def CycloneModel : SchedMachineModel {
   let MispredictPenalty = 16; // 14-19 cycles are typical.
   let CompleteModel = 1;
 
-  list<Predicate> UnsupportedFeatures = [HasSVE];
+  list<Predicate> UnsupportedFeatures = SVEUnsupported.F;
 }
 
 //===----------------------------------------------------------------------===//
@@ -494,7 +494,7 @@ def : InstRW<[CyWriteV3], (instregex "SQRSHLv","UQRSHLv")>;
 // WriteV includes:
 // SHLL,SSHLL,USHLL
 // SLI,SRI
-// BIF,BIT,BSL
+// BIF,BIT,BSL,BSP
 // EXT
 // CLS,CLZ,CNT,RBIT,REV16,REV32,REV64,XTN
 // XTN2

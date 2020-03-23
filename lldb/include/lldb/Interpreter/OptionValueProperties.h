@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_OptionValueProperties_h_
-#define liblldb_OptionValueProperties_h_
+#ifndef LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H
+#define LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H
 
 #include <vector>
 
@@ -62,24 +62,18 @@ public:
   //    bool
   //    GetQualifiedName (Stream &strm);
 
-  //---------------------------------------------------------------------
   // Subclass specific functions
-  //---------------------------------------------------------------------
 
   virtual size_t GetNumProperties() const;
 
-  //---------------------------------------------------------------------
   // Get the index of a property given its exact name in this property
   // collection, "name" can't be a path to a property path that refers to a
   // property within a property
-  //---------------------------------------------------------------------
   virtual uint32_t GetPropertyIndex(ConstString name) const;
 
-  //---------------------------------------------------------------------
   // Get a property by exact name exists in this property collection, name can
   // not be a path to a property path that refers to a property within a
   // property
-  //---------------------------------------------------------------------
   virtual const Property *GetProperty(const ExecutionContext *exe_ctx,
                                       bool will_modify,
                                       ConstString name) const;
@@ -88,10 +82,8 @@ public:
                                              bool will_modify,
                                              uint32_t idx) const;
 
-  //---------------------------------------------------------------------
   // Property can be be a property path like
   // "target.process.extra-startup-command"
-  //---------------------------------------------------------------------
   virtual const Property *GetPropertyAtPath(const ExecutionContext *exe_ctx,
                                             bool will_modify,
     llvm::StringRef property_path) const;
@@ -206,8 +198,7 @@ public:
                                                ConstString name);
 
   void SetValueChangedCallback(uint32_t property_idx,
-                               OptionValueChangedCallback callback,
-                               void *baton);
+                               std::function<void()> callback);
 
 protected:
   Property *ProtectedGetPropertyAtIndex(uint32_t idx) {
@@ -227,4 +218,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // liblldb_OptionValueProperties_h_
+#endif // LLDB_INTERPRETER_OPTIONVALUEPROPERTIES_H

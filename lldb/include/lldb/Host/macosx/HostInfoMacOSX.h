@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef lldb_Host_macosx_HostInfoMacOSX_h_
-#define lldb_Host_macosx_HostInfoMacOSX_h_
+#ifndef LLDB_HOST_MACOSX_HOSTINFOMACOSX_H
+#define LLDB_HOST_MACOSX_HOSTINFOMACOSX_H
 
 #include "lldb/Host/posix/HostInfoPosix.h"
 #include "lldb/Utility/FileSpec.h"
@@ -22,11 +22,12 @@ class HostInfoMacOSX : public HostInfoPosix {
 
 private:
   // Static class, unconstructable.
-  HostInfoMacOSX();
-  ~HostInfoMacOSX();
+  HostInfoMacOSX() = delete;
+  ~HostInfoMacOSX() = delete;
 
 public:
   static llvm::VersionTuple GetOSVersion();
+  static llvm::VersionTuple GetMacCatalystVersion();
   static bool GetOSBuildString(std::string &s);
   static bool GetOSKernelDescription(std::string &s);
   static FileSpec GetProgramFileSpec();

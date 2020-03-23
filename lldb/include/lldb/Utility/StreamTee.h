@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_StreamTee_h_
-#define liblldb_StreamTee_h_
+#ifndef LLDB_UTILITY_STREAMTEE_H
+#define LLDB_UTILITY_STREAMTEE_H
 
 #include <limits.h>
 
@@ -49,8 +49,11 @@ public:
   StreamTee &operator=(const StreamTee &rhs) {
     if (this != &rhs) {
       Stream::operator=(rhs);
-      std::lock_guard<std::recursive_mutex> lhs_locker(m_streams_mutex);
-      std::lock_guard<std::recursive_mutex> rhs_locker(rhs.m_streams_mutex);
+      std::lock(m_streams_mutex, rhs.m_streams_mutex);
+      std::lock_guard<std::recursive_mutex> lhs_locker(m_streams_mutex,
+                                                       std::adopt_lock);
+      std::lock_guard<std::recursive_mutex> rhs_locker(rhs.m_streams_mutex,
+                                                       std::adopt_lock);
       m_streams = rhs.m_streams;
     }
     return *this;
@@ -134,4 +137,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // liblldb_StreamTee_h_
+#endif // LLDB_UTILITY_STREAMTEE_H

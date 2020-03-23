@@ -6,9 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef lldb_DataVisualization_h_
-#define lldb_DataVisualization_h_
-
+#ifndef LLDB_DATAFORMATTERS_DATAVISUALIZATION_H
+#define LLDB_DATAFORMATTERS_DATAVISUALIZATION_H
 
 #include "lldb/DataFormatters/FormatClasses.h"
 #include "lldb/DataFormatters/FormatManager.h"
@@ -45,21 +44,11 @@ public:
   static lldb::TypeFilterImplSP
   GetFilterForType(lldb::TypeNameSpecifierImplSP type_sp);
 
-#ifndef LLDB_DISABLE_PYTHON
   static lldb::ScriptedSyntheticChildrenSP
   GetSyntheticForType(lldb::TypeNameSpecifierImplSP type_sp);
-#endif
 
-#ifndef LLDB_DISABLE_PYTHON
   static lldb::SyntheticChildrenSP
   GetSyntheticChildren(ValueObject &valobj, lldb::DynamicValueType use_dynamic);
-#endif
-
-  static lldb::TypeValidatorImplSP
-  GetValidator(ValueObject &valobj, lldb::DynamicValueType use_dynamic);
-
-  static lldb::TypeValidatorImplSP
-  GetValidatorForType(lldb::TypeNameSpecifierImplSP type_sp);
 
   static bool
   AnyMatches(ConstString type_name,
@@ -132,4 +121,4 @@ public:
 
 } // namespace lldb_private
 
-#endif // lldb_DataVisualization_h_
+#endif // LLDB_DATAFORMATTERS_DATAVISUALIZATION_H

@@ -1,4 +1,4 @@
-//===-- LibCxxVector.cpp ----------------------------------------*- C++ -*-===//
+//===-- LibCxxVector.cpp --------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -290,7 +290,7 @@ lldb_private::formatters::LibcxxStdVectorSyntheticFrontEndCreator(
   if (!type.IsValid() || type.GetNumTemplateArguments() == 0)
     return nullptr;
   CompilerType arg_type = type.GetTypeTemplateArgument(0);
-  if (arg_type.GetTypeName() == ConstString("bool"))
+  if (arg_type.GetTypeName() == "bool")
     return new LibcxxVectorBoolSyntheticFrontEnd(valobj_sp);
   return new LibcxxStdVectorSyntheticFrontEnd(valobj_sp);
 }

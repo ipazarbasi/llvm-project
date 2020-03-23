@@ -83,12 +83,11 @@
 ; RUN:    --plugin-opt=obj-path=%t5.o \
 ; RUN:    -shared %t.o %t2.o -o %t4
 ; RUN: llvm-readobj -h %t5.o | FileCheck %s --check-prefix=FORMAT
-; RUN: llvm-nm %t5.o 2>&1 | FileCheck %s -check-prefix=NO-SYMBOLS
-; NO-SYMBOLS: no symbols
+; RUN: llvm-nm %t5.o 2>&1 | count 0
 
 ; NM: T f
 ; NM2: T {{f|g}}
-; FORMAT: Format: ELF64-x86-64
+; FORMAT: Format: elf64-x86-64
 
 ; The backend index for this module contains summaries from itself and
 ; Inputs/thinlto.ll, as it imports from the latter.
@@ -119,11 +118,11 @@
 
 ; DIS1: ^0 = module: (path: "{{.*}}thinlto.ll.tmp.o", hash: (0, 0, 0, 0, 0))
 ; DIS1: ^1 = module: (path: "{{.*}}thinlto.ll.tmp2.o", hash: (0, 0, 0, 0, 0))
-; DIS1: ^2 = gv: (guid: 13146401226427987378, summaries: (function: (module: ^1, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0), insts: 1)))
-; DIS1: ^3 = gv: (guid: 14740650423002898831, summaries: (function: (module: ^0, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0), insts: 2, calls: ((callee: ^2)))))
+; DIS1: ^2 = gv: (guid: 13146401226427987378, summaries: (function: (module: ^1, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0, canAutoHide: 0), insts: 1)))
+; DIS1: ^3 = gv: (guid: 14740650423002898831, summaries: (function: (module: ^0, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0, canAutoHide: 0), insts: 2, calls: ((callee: ^2)))))
 
 ; DIS2: ^0 = module: (path: "{{.*}}thinlto.ll.tmp2.o", hash: (0, 0, 0, 0, 0))
-; DIS2: ^1 = gv: (guid: 13146401226427987378, summaries: (function: (module: ^0, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0), insts: 1)))
+; DIS2: ^1 = gv: (guid: 13146401226427987378, summaries: (function: (module: ^0, flags: (linkage: external, notEligibleToImport: 0, live: 1, dsoLocal: 0, canAutoHide: 0), insts: 1)))
 
 ; COMBINED: <MODULE_STRTAB_BLOCK
 ; COMBINED-NEXT: <ENTRY {{.*}} record string = '{{.*}}/test/tools/gold/X86/Output/thinlto.ll.tmp{{.*}}.o'

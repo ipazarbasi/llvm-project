@@ -8,6 +8,8 @@
 //
 // UNSUPPORTED: libcpp-has-no-threads
 // UNSUPPORTED: c++98, c++03, c++11
+//
+// FLAKY_TEST.
 
 // <shared_mutex>
 
@@ -19,6 +21,8 @@
 #include <thread>
 #include <cstdlib>
 #include <cassert>
+
+#include "test_macros.h"
 
 std::shared_timed_mutex m;
 

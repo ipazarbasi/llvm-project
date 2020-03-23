@@ -1,4 +1,4 @@
-//===-- HostInfoTest.cpp ----------------------------------------*- C++ -*-===//
+//===-- HostInfoTest.cpp --------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,9 +7,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "lldb/Host/HostInfo.h"
+#include "TestingSupport/SubsystemRAII.h"
 #include "TestingSupport/TestUtilities.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/lldb-defines.h"
+#include "llvm/Support/Host.h"
 #include "gtest/gtest.h"
 
 using namespace lldb_private;
@@ -17,15 +19,7 @@ using namespace llvm;
 
 namespace {
 class HostInfoTest : public ::testing::Test {
-public:
-  void SetUp() override {
-    FileSystem::Initialize();
-    HostInfo::Initialize();
-  }
-  void TearDown() override {
-    HostInfo::Terminate();
-    FileSystem::Terminate();
-  }
+  SubsystemRAII<FileSystem, HostInfo> subsystems;
 };
 } // namespace
 
@@ -49,4 +43,10 @@ TEST_F(HostInfoTest, GetAugmentedArchSpec) {
   // Test LLDB_ARCH_DEFAULT
   EXPECT_EQ(HostInfo::GetAugmentedArchSpec(LLDB_ARCH_DEFAULT).GetTriple(),
             HostInfo::GetArchitecture(HostInfo::eArchKindDefault).GetTriple());
+}
+
+TEST_F(HostInfoTest, GetHostname) {
+  // Check non-empty string input works correctly.
+  std::string s("abc");
+  EXPECT_TRUE(HostInfo::GetHostname(s));
 }

@@ -7,7 +7,7 @@
 ; RUN:     -function-sections -data-sections \
 ; RUN:     -relocation-model=pic -filetype=obj \
 ; RUN:     -generate-type-units -o - %s | \
-; RUN:     llvm-readelf -sections | \
+; RUN:     llvm-readelf --sections | \
 ; RUN:     FileCheck %s --check-prefix=CHECK-ELF
 ; Created from `clang++ -fxray-instrument -gsplit-dwarf -fdebug-types-section
 ; -ffunction-sections -fdata-sections -emit-llvm -S input.cc`:
@@ -25,7 +25,7 @@
 ; `a::b()` is actually associated with the function's symbol instead of the
 ; .debug_types.dwo section.
 ;
-; CHECK-ASM: xray_fn_idx,"awo",@progbits,_ZN1a1bEv,unique,1
+; CHECK-ASM: xray_fn_idx,"awo",@progbits,_ZN1a1bEv{{$}}
 ;
 ; CHECK-ELF-DAG: [[FSECT:[0-9]+]]] .text._ZN1a1bEv PROGBITS
 ; CHECK-ELF-DAG: [{{.*}}] .debug_types.dwo PROGBITS

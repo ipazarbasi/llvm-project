@@ -1,4 +1,4 @@
-//===-- OptionValueProperties.cpp --------------------------------*- C++-*-===//
+//===-- OptionValueProperties.cpp -----------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -60,10 +60,10 @@ void OptionValueProperties::Initialize(const PropertyDefinitions &defs) {
 }
 
 void OptionValueProperties::SetValueChangedCallback(
-    uint32_t property_idx, OptionValueChangedCallback callback, void *baton) {
+    uint32_t property_idx, std::function<void()> callback) {
   Property *property = ProtectedGetPropertyAtIndex(property_idx);
   if (property)
-    property->SetValueChangedCallback(callback, baton);
+    property->SetValueChangedCallback(std::move(callback));
 }
 
 void OptionValueProperties::AppendProperty(ConstString name,
@@ -159,7 +159,7 @@ OptionValueProperties::GetSubValue(const ExecutionContext *exe_ctx,
     // args if executable basename is "test" and arch is "x86_64"
     if (sub_name[1]) {
       llvm::StringRef predicate_start = sub_name.drop_front();
-      size_t pos = predicate_start.find_first_of('}');
+      size_t pos = predicate_start.find('}');
       if (pos != llvm::StringRef::npos) {
         auto predicate = predicate_start.take_front(pos);
         auto rest = predicate_start.drop_front(pos);
@@ -204,7 +204,6 @@ Status OptionValueProperties::SetSubValue(const ExecutionContext *exe_ctx,
     if (Properties::IsSettingExperimental(part))
       name_contains_experimental = true;
 
-  
   lldb::OptionValueSP value_sp(GetSubValue(exe_ctx, name, will_modify, error));
   if (value_sp)
     error = value_sp->SetValueFromString(value, op);

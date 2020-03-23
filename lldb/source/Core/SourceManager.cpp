@@ -1,4 +1,4 @@
-//===-- SourceManager.cpp ---------------------------------------*- C++ -*-===//
+//===-- SourceManager.cpp -------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -22,6 +22,7 @@
 #include "lldb/Symbol/SymbolContext.h"
 #include "lldb/Target/PathMappingList.h"
 #include "lldb/Target/Target.h"
+#include "lldb/Utility/AnsiTerminal.h"
 #include "lldb/Utility/ConstString.h"
 #include "lldb/Utility/DataBuffer.h"
 #include "lldb/Utility/DataBufferLLVM.h"
@@ -49,9 +50,7 @@ using namespace lldb_private;
 
 static inline bool is_newline_char(char ch) { return ch == '\n' || ch == '\r'; }
 
-//----------------------------------------------------------------------
 // SourceManager constructor
-//----------------------------------------------------------------------
 SourceManager::SourceManager(const TargetSP &target_sp)
     : m_last_file_sp(), m_last_line(0), m_last_count(0), m_default_set(false),
       m_target_wp(target_sp),
@@ -61,14 +60,13 @@ SourceManager::SourceManager(const DebuggerSP &debugger_sp)
     : m_last_file_sp(), m_last_line(0), m_last_count(0), m_default_set(false),
       m_target_wp(), m_debugger_wp(debugger_sp) {}
 
-//----------------------------------------------------------------------
 // Destructor
-//----------------------------------------------------------------------
 SourceManager::~SourceManager() {}
 
 SourceManager::FileSP SourceManager::GetFile(const FileSpec &file_spec) {
   bool same_as_previous =
-      m_last_file_sp && m_last_file_sp->FileSpecMatches(file_spec);
+      m_last_file_sp &&
+      FileSpec::Match(file_spec, m_last_file_sp->GetFileSpec());
 
   DebuggerSP debugger_sp(m_debugger_wp.lock());
   FileSP file_sp;
@@ -151,6 +149,10 @@ static bool should_show_stop_column_with_caret(DebuggerSP debugger_sp) {
   return value == eStopShowColumnCaret;
 }
 
+static bool should_show_stop_line_with_ansi(DebuggerSP debugger_sp) {
+  return debugger_sp && debugger_sp->GetUseColor();
+}
+
 size_t SourceManager::DisplaySourceLinesWithLineNumbersUsingLastFile(
     uint32_t start_line, uint32_t count, uint32_t curr_line, uint32_t column,
     const char *current_line_cstr, Stream *s,
@@ -194,8 +196,20 @@ size_t SourceManager::DisplaySourceLinesWithLineNumbersUsingLastFile(
           ::snprintf(prefix, sizeof(prefix), "    ");
       }
 
-      s->Printf("%s%2.2s %-4u\t", prefix,
-                line == curr_line ? current_line_cstr : "", line);
+      char buffer[3];
+      sprintf(buffer, "%2.2s", (line == curr_line) ? current_line_cstr : "");
+      std::string current_line_highlight(buffer);
+
+      auto debugger_sp = m_debugger_wp.lock();
+      if (should_show_stop_line_with_ansi(debugger_sp)) {
+        current_line_highlight = ansi::FormatAnsiTerminalCodes(
+            (debugger_sp->GetStopShowLineMarkerAnsiPrefix() +
+             current_line_highlight +
+             debugger_sp->GetStopShowLineMarkerAnsiSuffix())
+                .str());
+      }
+
+      s->Printf("%s%s %-4u\t", prefix, current_line_highlight.c_str(), line);
 
       // So far we treated column 0 as a special 'no column value', but
       // DisplaySourceLines starts counting columns from 0 (and no column is
@@ -207,7 +221,7 @@ size_t SourceManager::DisplaySourceLinesWithLineNumbersUsingLastFile(
       size_t this_line_size =
           m_last_file_sp->DisplaySourceLines(line, columnToHighlight, 0, 0, s);
       if (column != 0 && line == curr_line &&
-          should_show_stop_column_with_caret(m_debugger_wp.lock())) {
+          should_show_stop_column_with_caret(debugger_sp)) {
         // Display caret cursor.
         std::string src_line;
         m_last_file_sp->GetLine(line, src_line);
@@ -328,10 +342,10 @@ bool SourceManager::GetDefaultFileAndLine(FileSpec &file_spec, uint32_t &line) {
         ConstString main_name("main");
         bool symbols_okay = false; // Force it to be a debug symbol.
         bool inlines_okay = true;
-        bool append = false;
-        size_t num_matches = executable_ptr->FindFunctions(
-            main_name, NULL, lldb::eFunctionNameTypeBase, inlines_okay,
-            symbols_okay, append, sc_list);
+        executable_ptr->FindFunctions(main_name, CompilerDeclContext(),
+                                      lldb::eFunctionNameTypeBase, inlines_okay,
+                                      symbols_okay, sc_list);
+        size_t num_matches = sc_list.GetSize();
         for (size_t idx = 0; idx < num_matches; idx++) {
           SymbolContext sc;
           sc_list.GetContextAtIndex(idx, sc);
@@ -403,24 +417,25 @@ void SourceManager::File::CommonInitializer(const FileSpec &file_spec,
         if (num_matches != 0) {
           if (num_matches > 1) {
             SymbolContext sc;
-            FileSpec *test_cu_spec = NULL;
+            CompileUnit *test_cu = nullptr;
 
             for (unsigned i = 0; i < num_matches; i++) {
               sc_list.GetContextAtIndex(i, sc);
               if (sc.comp_unit) {
-                if (test_cu_spec) {
-                  if (test_cu_spec != static_cast<FileSpec *>(sc.comp_unit))
+                if (test_cu) {
+                  if (test_cu != sc.comp_unit)
                     got_multiple = true;
                   break;
                 } else
-                  test_cu_spec = sc.comp_unit;
+                  test_cu = sc.comp_unit;
               }
             }
           }
           if (!got_multiple) {
             SymbolContext sc;
             sc_list.GetContextAtIndex(0, sc);
-            m_file_spec = sc.comp_unit;
+            if (sc.comp_unit)
+              m_file_spec = sc.comp_unit->GetPrimaryFile();
             m_mod_time = FileSystem::Instance().GetModificationTime(m_file_spec);
           }
         }
@@ -465,12 +480,12 @@ uint32_t SourceManager::File::GetNumLines() {
 
 const char *SourceManager::File::PeekLineData(uint32_t line) {
   if (!LineIsValid(line))
-    return NULL;
+    return nullptr;
 
   size_t line_offset = GetLineOffset(line);
   if (line_offset < m_data_sp->GetByteSize())
     return (const char *)m_data_sp->GetBytes() + line_offset;
-  return NULL;
+  return nullptr;
 }
 
 uint32_t SourceManager::File::GetLineLength(uint32_t line,
@@ -605,10 +620,6 @@ void SourceManager::File::FindLinesMatchingRegex(
   }
 }
 
-bool SourceManager::File::FileSpecMatches(const FileSpec &file_spec) {
-  return FileSpec::Equal(m_file_spec, file_spec, false);
-}
-
 bool lldb_private::operator==(const SourceManager::File &lhs,
                               const SourceManager::File &rhs) {
   if (lhs.m_file_spec != rhs.m_file_spec)
@@ -625,7 +636,7 @@ bool SourceManager::File::CalculateLineOffsets(uint32_t line) {
       return true;
 
     if (m_offsets.empty()) {
-      if (m_data_sp.get() == NULL)
+      if (m_data_sp.get() == nullptr)
         return false;
 
       const char *start = (char *)m_data_sp->GetBytes();

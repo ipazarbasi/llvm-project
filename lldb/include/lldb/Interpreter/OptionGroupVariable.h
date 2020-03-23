@@ -6,17 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_OptionGroupVariable_h_
-#define liblldb_OptionGroupVariable_h_
+#ifndef LLDB_INTERPRETER_OPTIONGROUPVARIABLE_H
+#define LLDB_INTERPRETER_OPTIONGROUPVARIABLE_H
 
 #include "lldb/Interpreter/OptionValueString.h"
 #include "lldb/Interpreter/Options.h"
 
 namespace lldb_private {
 
-//-------------------------------------------------------------------------
 // OptionGroupVariable
-//-------------------------------------------------------------------------
 
 class OptionGroupVariable : public OptionGroup {
 public:
@@ -48,4 +46,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_OptionGroupVariable_h_
+#endif // LLDB_INTERPRETER_OPTIONGROUPVARIABLE_H

@@ -4,6 +4,7 @@ set(LLVM_LINK_COMPONENTS
   Core
   Support
   Passes
+  TransformUtils
   )
 
 add_llvm_unittest(IRTests
@@ -23,6 +24,7 @@ add_llvm_unittest(IRTests
   IRBuilderTest.cpp
   InstructionsTest.cpp
   IntrinsicsTest.cpp
+  KnowledgeRetentionTest.cpp
   LegacyPassManagerTest.cpp
   MDBuilderTest.cpp
   ManglerTest.cpp
@@ -30,13 +32,16 @@ add_llvm_unittest(IRTests
   ModuleTest.cpp
   PassManagerTest.cpp
   PatternMatch.cpp
+  TimePassesTest.cpp
   TypesTest.cpp
   UseTest.cpp
   UserTest.cpp
   ValueHandleTest.cpp
   ValueMapTest.cpp
   ValueTest.cpp
+  VectorTypesTest.cpp
   VerifierTest.cpp
+  VPIntrinsicTest.cpp
   WaymarkTest.cpp
   )
 

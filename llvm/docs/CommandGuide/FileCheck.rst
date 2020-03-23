@@ -1,6 +1,8 @@
 FileCheck - Flexible pattern matching file verifier
 ===================================================
 
+.. program:: FileCheck
+
 SYNOPSIS
 --------
 
@@ -69,6 +71,11 @@ and from the command line.
  The :option:`--strict-whitespace` argument disables this behavior. End-of-line
  sequences are canonicalized to UNIX-style ``\n`` in all modes.
 
+.. option:: --ignore-case
+
+  By default, FileCheck uses case-sensitive matching. This option causes
+  FileCheck to use case-insensitive matching.
+
 .. option:: --implicit-check-not check-pattern
 
   Adds implicit negative checks for the specified patterns between positive
@@ -102,8 +109,16 @@ and from the command line.
 
 .. option:: -D<VAR=VALUE>
 
-  Sets a filecheck variable ``VAR`` with value ``VALUE`` that can be used in
-  ``CHECK:`` lines.
+  Sets a filecheck pattern variable ``VAR`` with value ``VALUE`` that can be
+  used in ``CHECK:`` lines.
+
+.. option:: -D#<FMT>,<NUMVAR>=<NUMERIC EXPRESSION>
+
+  Sets a filecheck numeric variable ``NUMVAR`` of matching format ``FMT`` to
+  the result of evaluating ``<NUMERIC EXPRESSION>`` that can be used in
+  ``CHECK:`` lines.  See section
+  ``FileCheck Numeric Variables and Expressions`` for details on supported
+  numeric expressions.
 
 .. option:: -version
 
@@ -494,8 +509,8 @@ simply uniquely match a single line in the file being verified.
 
 ``CHECK-LABEL:`` directives cannot contain variable definitions or uses.
 
-FileCheck Pattern Matching Syntax
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+FileCheck Regex Matching Syntax
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 All FileCheck directives take a pattern to match.
 For most uses of FileCheck, fixed string matching is perfectly sufficient.  For
@@ -518,16 +533,20 @@ Because regular expressions are enclosed with double braces, they are
 visually distinct, and you don't need to use escape characters within the double
 braces like you would in C.  In the rare case that you want to match double
 braces explicitly from the input, you can use something ugly like
-``{{[{][{]}}`` as your pattern.
+``{{[}][}]}}`` as your pattern.  Or if you are using the repetition count
+syntax, for example ``[[:xdigit:]]{8}`` to match exactly 8 hex digits, you
+would need to add parentheses like this ``{{([[:xdigit:]]{8})}}`` to avoid
+confusion with FileCheck's closing double-brace.
 
-FileCheck Variables
-~~~~~~~~~~~~~~~~~~~
+FileCheck String Substitution Blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 It is often useful to match a pattern and then verify that it occurs again
-later in the file.  For codegen tests, this can be useful to allow any register,
-but verify that that register is used consistently later.  To do this,
-:program:`FileCheck` allows named variables to be defined and substituted into
-patterns.  Here is a simple example:
+later in the file.  For codegen tests, this can be useful to allow any
+register, but verify that that register is used consistently later.  To do
+this, :program:`FileCheck` supports string substitution blocks that allow
+string variables to be defined and substituted into patterns.  Here is a simple
+example:
 
 .. code-block:: llvm
 
@@ -536,15 +555,16 @@ patterns.  Here is a simple example:
    ; CHECK:    andw	{{.*}}[[REGISTER]]
 
 The first check line matches a regex ``%[a-z]+`` and captures it into the
-variable ``REGISTER``.  The second line verifies that whatever is in
-``REGISTER`` occurs later in the file after an "``andw``".  :program:`FileCheck`
-variable references are always contained in ``[[ ]]`` pairs, and their names can
-be formed with the regex ``[a-zA-Z_][a-zA-Z0-9_]*``.  If a colon follows the name,
-then it is a definition of the variable; otherwise, it is a use.
+string variable ``REGISTER``.  The second line verifies that whatever is in
+``REGISTER`` occurs later in the file after an "``andw``". :program:`FileCheck`
+string substitution blocks are always contained in ``[[ ]]`` pairs, and string
+variable names can be formed with the regex ``[a-zA-Z_][a-zA-Z0-9_]*``.  If a
+colon follows the name, then it is a definition of the variable; otherwise, it
+is a substitution.
 
-:program:`FileCheck` variables can be defined multiple times, and uses always
-get the latest value.  Variables can also be used later on the same line they
-were defined on. For example:
+:program:`FileCheck` variables can be defined multiple times, and substitutions
+always get the latest value.  Variables can also be substituted later on the
+same line they were defined on. For example:
 
 .. code-block:: llvm
 
@@ -560,30 +580,145 @@ CHECK-LABEL block. Global variables are not affected by CHECK-LABEL.
 This makes it easier to ensure that individual tests are not affected
 by variables set in preceding tests.
 
-FileCheck Expressions
-~~~~~~~~~~~~~~~~~~~~~
+FileCheck Numeric Substitution Blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Sometimes there's a need to verify output which refers line numbers of the
+:program:`FileCheck` also supports numeric substitution blocks that allow
+defining numeric variables and checking for numeric values that satisfy a
+numeric expression constraint based on those variables via a numeric
+substitution. This allows ``CHECK:`` directives to verify a numeric relation
+between two numbers, such as the need for consecutive registers to be used.
+
+The syntax to define a numeric variable is ``[[#%<fmtspec>,<NUMVAR>:]]`` where:
+
+* ``%<fmtspec>`` is an optional scanf-style matching format specifier to
+  indicate what number format to match (e.g. hex number).  Currently accepted
+  format specifiers are ``%u``, ``%x`` and ``%X``.  If absent, the format
+  specifier defaults to ``%u``.
+
+* ``<NUMVAR>`` is the name of the numeric variable to define to the matching
+  value.
+
+For example:
+
+.. code-block:: llvm
+
+    ; CHECK: mov r[[#REG:]], 0x[[#%X,IMM:]]
+
+would match ``mov r5, 0xF0F0`` and set ``REG`` to the value ``5`` and ``IMM``
+to the value ``0xF0F0``.
+
+The syntax of a numeric substitution is ``[[#%<fmtspec>,<expr>]]`` where:
+
+* ``%<fmtspec>`` is the same matching format specifier as for defining numeric
+  variables but acting as a printf-style format to indicate how a numeric
+  expression value should be matched against.  If absent, the format specifier
+  is inferred from the matching format of the numeric variable(s) used by the
+  expression constraint if any, and defaults to ``%u`` if no numeric variable
+  is used.  In case of conflict between matching formats of several numeric
+  variables the format specifier is mandatory.
+
+* ``<expr>`` is an expression. An expression is in turn recursively defined
+  as:
+
+  * a numeric operand, or
+  * an expression followed by an operator and a numeric operand.
+
+  A numeric operand is a previously defined numeric variable, or an integer
+  literal. The supported operators are ``+`` and ``-``. Spaces are accepted
+  before, after and between any of these elements.
+
+For example:
+
+.. code-block:: llvm
+
+    ; CHECK: load r[[#REG:]], [r0]
+    ; CHECK: load r[[#REG+1]], [r1]
+    ; CHECK: Loading from 0x[[#%x,ADDR:] to 0x[[#ADDR + 7]]
+
+The above example would match the text:
+
+.. code-block:: gas
+
+    load r5, [r0]
+    load r6, [r1]
+    Loading from 0xa0463440 to 0xa0463447
+
+but would not match the text:
+
+.. code-block:: gas
+
+    load r5, [r0]
+    load r7, [r1]
+    Loading from 0xa0463440 to 0xa0463443
+
+Due to ``7`` being unequal to ``5 + 1`` and ``a0463443`` being unequal to
+``a0463440 + 7``.
+
+The syntax also supports an empty expression, equivalent to writing {{[0-9]+}},
+for cases where the input must contain a numeric value but the value itself
+does not matter:
+
+.. code-block:: gas
+
+    ; CHECK-NOT: mov r0, r[[#]]
+
+to check that a value is synthesized rather than moved around.
+
+A numeric variable can also be defined to the result of a numeric expression,
+in which case the numeric expression is checked and if verified the variable is
+assigned to the value. The unified syntax for both defining numeric variables
+and checking a numeric expression is thus ``[[#%<fmtspec>,<NUMVAR>: <expr>]]``
+with each element as described previously. One can use this syntax to make a
+testcase more self-describing by using variables instead of values:
+
+.. code-block:: gas
+
+    ; CHECK: mov r[[#REG_OFFSET:]], 0x[[#%X,FIELD_OFFSET:12]]
+    ; CHECK-NEXT: load r[[#]], [r[[#REG_BASE:]], r[[#REG_OFFSET]]]
+
+which would match:
+
+.. code-block:: gas
+
+    mov r4, 0xC
+    load r6, [r5, r4]
+
+The ``--enable-var-scope`` option has the same effect on numeric variables as
+on string variables.
+
+Important note: In its current implementation, an expression cannot use a
+numeric variable defined earlier in the same CHECK directive.
+
+FileCheck Pseudo Numeric Variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sometimes there's a need to verify output that contains line numbers of the
 match file, e.g. when testing compiler diagnostics.  This introduces a certain
 fragility of the match file structure, as "``CHECK:``" lines contain absolute
 line numbers in the same file, which have to be updated whenever line numbers
 change due to text addition or deletion.
 
-To support this case, FileCheck allows using ``[[@LINE]]``,
-``[[@LINE+<offset>]]``, ``[[@LINE-<offset>]]`` expressions in patterns. These
-expressions expand to a number of the line where a pattern is located (with an
-optional integer offset).
+To support this case, FileCheck expressions understand the ``@LINE`` pseudo
+numeric variable which evaluates to the line number of the CHECK pattern where
+it is found.
 
 This way match patterns can be put near the relevant test lines and include
 relative line number references, for example:
 
 .. code-block:: c++
 
-   // CHECK: test.cpp:[[@LINE+4]]:6: error: expected ';' after top level declarator
+   // CHECK: test.cpp:[[# @LINE + 4]]:6: error: expected ';' after top level declarator
    // CHECK-NEXT: {{^int a}}
    // CHECK-NEXT: {{^     \^}}
    // CHECK-NEXT: {{^     ;}}
    int a
+
+To support legacy uses of ``@LINE`` as a special string variable,
+:program:`FileCheck` also accepts the following uses of ``@LINE`` with string
+substitution block syntax: ``[[@LINE]]``, ``[[@LINE+<offset>]]`` and
+``[[@LINE-<offset>]]`` without any spaces inside the brackets and where
+``offset`` is an integer.
 
 Matching Newline Characters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

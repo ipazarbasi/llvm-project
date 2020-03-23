@@ -1,4 +1,4 @@
-//===-- SBHostOS.cpp --------------------------------------------*- C++ -*-===//
+//===-- SBHostOS.cpp ------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,13 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_DISABLE_PYTHON
-#include "Plugins/ScriptInterpreter/Python/lldb-python.h"
-#endif
-
+#include "lldb/API/SBHostOS.h"
 #include "SBReproducerPrivate.h"
 #include "lldb/API/SBError.h"
-#include "lldb/API/SBHostOS.h"
+#include "lldb/Host/Config.h"
 #include "lldb/Host/FileSystem.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Host/HostInfo.h"
@@ -22,7 +19,7 @@
 #include "lldb/Utility/FileSpec.h"
 
 #include "Plugins/ExpressionParser/Clang/ClangHost.h"
-#ifndef LLDB_DISABLE_PYTHON
+#if LLDB_ENABLE_PYTHON
 #include "Plugins/ScriptInterpreter/Python/ScriptInterpreterPython.h"
 #endif
 
@@ -64,7 +61,7 @@ SBFileSpec SBHostOS::GetLLDBPath(lldb::PathType path_type) {
     fspec = HostInfo::GetHeaderDir();
     break;
   case ePathTypePythonDir:
-#ifndef LLDB_DISABLE_PYTHON
+#if LLDB_ENABLE_PYTHON
     fspec = ScriptInterpreterPython::GetPythonDir();
 #endif
     break;
@@ -111,9 +108,17 @@ lldb::thread_t SBHostOS::ThreadCreate(const char *name,
   LLDB_RECORD_DUMMY(lldb::thread_t, SBHostOS, ThreadCreate,
                     (lldb::thread_func_t, void *, SBError *), name,
                     thread_function, thread_arg, error_ptr);
-  HostThread thread(ThreadLauncher::LaunchThread(
-      name, thread_function, thread_arg, error_ptr ? error_ptr->get() : NULL));
-  return thread.Release();
+  llvm::Expected<HostThread> thread =
+      ThreadLauncher::LaunchThread(name, thread_function, thread_arg);
+  if (!thread) {
+    if (error_ptr)
+      error_ptr->SetError(Status(thread.takeError()));
+    else
+      llvm::consumeError(thread.takeError());
+    return LLDB_INVALID_HOST_THREAD;
+  }
+
+  return thread->Release();
 }
 
 void SBHostOS::ThreadCreated(const char *name) {
@@ -168,4 +173,23 @@ bool SBHostOS::ThreadJoin(lldb::thread_t thread, lldb::thread_result_t *result,
     error_ptr->SetError(error);
   host_thread.Release();
   return error.Success();
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBHostOS>(Registry &R) {
+  LLDB_REGISTER_STATIC_METHOD(lldb::SBFileSpec, SBHostOS, GetProgramFileSpec,
+                              ());
+  LLDB_REGISTER_STATIC_METHOD(lldb::SBFileSpec, SBHostOS, GetLLDBPythonPath,
+                              ());
+  LLDB_REGISTER_STATIC_METHOD(lldb::SBFileSpec, SBHostOS, GetLLDBPath,
+                              (lldb::PathType));
+  LLDB_REGISTER_STATIC_METHOD(lldb::SBFileSpec, SBHostOS,
+                              GetUserHomeDirectory, ());
+  LLDB_REGISTER_STATIC_METHOD(void, SBHostOS, ThreadCreated, (const char *));
+}
+
+}
 }

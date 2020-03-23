@@ -1,4 +1,4 @@
-//===-- PlatformAppleTVSimulator.cpp ----------------------------*- C++ -*-===//
+//===-- PlatformAppleTVSimulator.cpp --------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -32,14 +32,10 @@ namespace lldb_private {
 class Process;
 }
 
-//------------------------------------------------------------------
 // Static Variables
-//------------------------------------------------------------------
 static uint32_t g_initialize_count = 0;
 
-//------------------------------------------------------------------
 // Static Functions
-//------------------------------------------------------------------
 void PlatformAppleTVSimulator::Initialize() {
   PlatformDarwin::Initialize();
 
@@ -74,8 +70,8 @@ PlatformSP PlatformAppleTVSimulator::CreateInstance(bool force,
     const char *triple_cstr =
         arch ? arch->GetTriple().getTriple().c_str() : "<null>";
 
-    log->Printf("PlatformAppleTVSimulator::%s(force=%s, arch={%s,%s})",
-                __FUNCTION__, force ? "true" : "false", arch_name, triple_cstr);
+    LLDB_LOGF(log, "PlatformAppleTVSimulator::%s(force=%s, arch={%s,%s})",
+              __FUNCTION__, force ? "true" : "false", arch_name, triple_cstr);
   }
 
   bool create = force;
@@ -124,16 +120,14 @@ PlatformSP PlatformAppleTVSimulator::CreateInstance(bool force,
     }
   }
   if (create) {
-    if (log)
-      log->Printf("PlatformAppleTVSimulator::%s() creating platform",
-                  __FUNCTION__);
+    LLDB_LOGF(log, "PlatformAppleTVSimulator::%s() creating platform",
+              __FUNCTION__);
 
     return PlatformSP(new PlatformAppleTVSimulator());
   }
 
-  if (log)
-    log->Printf("PlatformAppleTVSimulator::%s() aborting creation of platform",
-                __FUNCTION__);
+  LLDB_LOGF(log, "PlatformAppleTVSimulator::%s() aborting creation of platform",
+            __FUNCTION__);
 
   return PlatformSP();
 }
@@ -147,18 +141,14 @@ const char *PlatformAppleTVSimulator::GetDescriptionStatic() {
   return "Apple TV simulator platform plug-in.";
 }
 
-//------------------------------------------------------------------
 /// Default Constructor
-//------------------------------------------------------------------
 PlatformAppleTVSimulator::PlatformAppleTVSimulator()
     : PlatformDarwin(true), m_sdk_dir_mutex(), m_sdk_directory() {}
 
-//------------------------------------------------------------------
 /// Destructor.
 ///
 /// The destructor is virtual since this class is designed to be
 /// inherited from by the plug-in instance.
-//------------------------------------------------------------------
 PlatformAppleTVSimulator::~PlatformAppleTVSimulator() {}
 
 void PlatformAppleTVSimulator::GetStatus(Stream &strm) {
@@ -371,13 +361,12 @@ uint32_t PlatformAppleTVSimulator::FindProcesses(
 
   // Now we filter them down to only the TvOS triples
   for (uint32_t i = 0; i < n; ++i) {
-    const ProcessInstanceInfo &proc_info =
-        all_osx_process_infos.GetProcessInfoAtIndex(i);
+    const ProcessInstanceInfo &proc_info = all_osx_process_infos[i];
     if (proc_info.GetArchitecture().GetTriple().getOS() == llvm::Triple::TvOS) {
-      process_infos.Append(proc_info);
+      process_infos.push_back(proc_info);
     }
   }
-  return process_infos.GetSize();
+  return process_infos.size();
 }
 
 bool PlatformAppleTVSimulator::GetSupportedArchitectureAtIndex(uint32_t idx,

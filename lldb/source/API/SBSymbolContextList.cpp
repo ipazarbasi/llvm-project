@@ -1,4 +1,4 @@
-//===-- SBSymbolContextList.cpp ---------------------------------*- C++ -*-===//
+//===-- SBSymbolContextList.cpp -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -28,7 +28,7 @@ SBSymbolContextList::SBSymbolContextList(const SBSymbolContextList &rhs)
   m_opaque_up = clone(rhs.m_opaque_up);
 }
 
-SBSymbolContextList::~SBSymbolContextList() {}
+SBSymbolContextList::~SBSymbolContextList() = default;
 
 const SBSymbolContextList &SBSymbolContextList::
 operator=(const SBSymbolContextList &rhs) {
@@ -38,7 +38,7 @@ operator=(const SBSymbolContextList &rhs) {
 
   if (this != &rhs)
     m_opaque_up = clone(rhs.m_opaque_up);
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
 uint32_t SBSymbolContextList::GetSize() const {
@@ -93,7 +93,7 @@ bool SBSymbolContextList::IsValid() const {
 SBSymbolContextList::operator bool() const {
   LLDB_RECORD_METHOD_CONST_NO_ARGS(bool, SBSymbolContextList, operator bool);
 
-  return m_opaque_up != NULL;
+  return m_opaque_up != nullptr;
 }
 
 lldb_private::SymbolContextList *SBSymbolContextList::operator->() const {
@@ -111,6 +111,34 @@ bool SBSymbolContextList::GetDescription(lldb::SBStream &description) {
 
   Stream &strm = description.ref();
   if (m_opaque_up)
-    m_opaque_up->GetDescription(&strm, lldb::eDescriptionLevelFull, NULL);
+    m_opaque_up->GetDescription(&strm, lldb::eDescriptionLevelFull, nullptr);
   return true;
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBSymbolContextList>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBSymbolContextList, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBSymbolContextList,
+                            (const lldb::SBSymbolContextList &));
+  LLDB_REGISTER_METHOD(
+      const lldb::SBSymbolContextList &,
+      SBSymbolContextList, operator=,(const lldb::SBSymbolContextList &));
+  LLDB_REGISTER_METHOD_CONST(uint32_t, SBSymbolContextList, GetSize, ());
+  LLDB_REGISTER_METHOD(lldb::SBSymbolContext, SBSymbolContextList,
+                       GetContextAtIndex, (uint32_t));
+  LLDB_REGISTER_METHOD(void, SBSymbolContextList, Clear, ());
+  LLDB_REGISTER_METHOD(void, SBSymbolContextList, Append,
+                       (lldb::SBSymbolContext &));
+  LLDB_REGISTER_METHOD(void, SBSymbolContextList, Append,
+                       (lldb::SBSymbolContextList &));
+  LLDB_REGISTER_METHOD_CONST(bool, SBSymbolContextList, IsValid, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBSymbolContextList, operator bool, ());
+  LLDB_REGISTER_METHOD(bool, SBSymbolContextList, GetDescription,
+                       (lldb::SBStream &));
+}
+
+}
 }

@@ -1,4 +1,4 @@
-//===-- ReproducerInstrumentation.cpp ---------------------------*- C++ -*-===//
+//===-- ReproducerInstrumentation.cpp -------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -8,6 +8,8 @@
 
 #include "lldb/Utility/ReproducerInstrumentation.h"
 #include "lldb/Utility/Reproducer.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 using namespace lldb_private;
 using namespace lldb_private::repro;
@@ -21,17 +23,45 @@ void IndexToObject::AddObjectForIndexImpl(unsigned idx, void *object) {
   m_mapping[idx] = object;
 }
 
+template <> const uint8_t *Deserializer::Deserialize<const uint8_t *>() {
+  return Deserialize<uint8_t *>();
+}
+
+template <> void *Deserializer::Deserialize<void *>() {
+  return const_cast<void *>(Deserialize<const void *>());
+}
+
+template <> const void *Deserializer::Deserialize<const void *>() {
+  return nullptr;
+}
+
 template <> char *Deserializer::Deserialize<char *>() {
   return const_cast<char *>(Deserialize<const char *>());
 }
 
 template <> const char *Deserializer::Deserialize<const char *>() {
-  auto pos = m_buffer.find('\0');
-  if (pos == llvm::StringRef::npos)
+  const size_t size = Deserialize<size_t>();
+  if (size == std::numeric_limits<size_t>::max())
     return nullptr;
+  assert(HasData(size + 1));
   const char *str = m_buffer.data();
-  m_buffer = m_buffer.drop_front(pos + 1);
+  m_buffer = m_buffer.drop_front(size + 1);
+#ifdef LLDB_REPRO_INSTR_TRACE
+  llvm::errs() << "Deserializing with " << LLVM_PRETTY_FUNCTION << " -> \""
+               << str << "\"\n";
+#endif
   return str;
+}
+
+template <> const char **Deserializer::Deserialize<const char **>() {
+  const size_t size = Deserialize<size_t>();
+  if (size == 0)
+    return nullptr;
+  const char **r =
+      reinterpret_cast<const char **>(calloc(size + 1, sizeof(char *)));
+  for (size_t i = 0; i < size; ++i)
+    r[i] = Deserialize<const char *>();
+  return r;
 }
 
 bool Registry::Replay(const FileSpec &file) {
@@ -46,6 +76,10 @@ bool Registry::Replay(llvm::StringRef buffer) {
 #ifndef LLDB_REPRO_INSTR_TRACE
   Log *log = GetLogIfAllCategoriesSet(LIBLLDB_LOG_API);
 #endif
+
+  // Disable buffering stdout so that we approximate the way things get flushed
+  // during an interactive session.
+  setvbuf(stdout, nullptr, _IONBF, 0);
 
   Deserializer deserializer(buffer);
   while (deserializer.HasData(1)) {
@@ -101,14 +135,16 @@ unsigned ObjectToIndex::GetIndexForObjectImpl(const void *object) {
   return m_mapping[object];
 }
 
-Recorder::Recorder(Serializer &serializer, Registry &registry,
-                   llvm::StringRef pretty_func)
-    : m_serializer(serializer), m_registry(registry),
-      m_pretty_func(pretty_func), m_local_boundary(false),
+Recorder::Recorder(llvm::StringRef pretty_func, std::string &&pretty_args)
+    : m_serializer(nullptr), m_pretty_func(pretty_func),
+      m_pretty_args(pretty_args), m_local_boundary(false),
       m_result_recorded(true) {
   if (!g_global_boundary) {
     g_global_boundary = true;
     m_local_boundary = true;
+
+    LLDB_LOG(GetLogIfAllCategoriesSet(LIBLLDB_LOG_API), "{0} ({1})",
+             m_pretty_func, m_pretty_args);
   }
 }
 

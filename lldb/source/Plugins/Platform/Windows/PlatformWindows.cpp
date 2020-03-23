@@ -1,4 +1,4 @@
-//===-- PlatformWindows.cpp -------------------------------------*- C++ -*-===//
+//===-- PlatformWindows.cpp -----------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -26,6 +26,8 @@
 
 using namespace lldb;
 using namespace lldb_private;
+
+LLDB_PLUGIN_DEFINE(PlatformWindows)
 
 static uint32_t g_initialize_count = 0;
 
@@ -125,8 +127,6 @@ void PlatformWindows::Initialize() {
 
   if (g_initialize_count++ == 0) {
 #if defined(_WIN32)
-    WSADATA dummy;
-    WSAStartup(MAKEWORD(2, 2), &dummy);
     // Force a host flag to true for the default platform object.
     PlatformSP default_platform_sp(new PlatformWindows(true));
     default_platform_sp->SetSystemArchitecture(HostInfo::GetArchitecture());
@@ -139,12 +139,9 @@ void PlatformWindows::Initialize() {
   }
 }
 
-void PlatformWindows::Terminate(void) {
+void PlatformWindows::Terminate() {
   if (g_initialize_count > 0) {
     if (--g_initialize_count == 0) {
-#ifdef _WIN32
-      WSACleanup();
-#endif
       PluginManager::UnregisterPlugin(PlatformWindows::CreateInstance);
     }
   }
@@ -152,17 +149,13 @@ void PlatformWindows::Terminate(void) {
   Platform::Terminate();
 }
 
-//------------------------------------------------------------------
 /// Default Constructor
-//------------------------------------------------------------------
 PlatformWindows::PlatformWindows(bool is_host) : RemoteAwarePlatform(is_host) {}
 
-//------------------------------------------------------------------
 /// Destructor.
 ///
 /// The destructor is virtual since this class is designed to be
 /// inherited from by the plug-in instance.
-//------------------------------------------------------------------
 PlatformWindows::~PlatformWindows() = default;
 
 Status PlatformWindows::ResolveExecutable(

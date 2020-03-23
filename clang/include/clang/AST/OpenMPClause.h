@@ -30,6 +30,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/Frontend/OpenMP/OMPConstants.h"
+#include "llvm/Frontend/OpenMP/OMPContext.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/TrailingObjects.h"
@@ -90,6 +92,15 @@ public:
     return const_child_range(Children.begin(), Children.end());
   }
 
+  /// Get the iterator range for the expressions used in the clauses. Used
+  /// expressions include only the children that must be evaluated at the
+  /// runtime before entering the construct.
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
   static bool classof(const OMPClause *) { return true; }
 };
 
@@ -102,7 +113,7 @@ class OMPClauseWithPreInit {
   Stmt *PreInit = nullptr;
 
   /// Region that captures the associated stmt.
-  OpenMPDirectiveKind CaptureRegion = OMPD_unknown;
+  OpenMPDirectiveKind CaptureRegion = llvm::omp::OMPD_unknown;
 
 protected:
   OMPClauseWithPreInit(const OMPClause *This) {
@@ -110,7 +121,9 @@ protected:
   }
 
   /// Set pre-initialization statement for the clause.
-  void setPreInitStmt(Stmt *S, OpenMPDirectiveKind ThisRegion = OMPD_unknown) {
+  void
+  setPreInitStmt(Stmt *S,
+                 OpenMPDirectiveKind ThisRegion = llvm::omp::OMPD_unknown) {
     PreInit = S;
     CaptureRegion = ThisRegion;
   }
@@ -290,8 +303,116 @@ public:
 
   child_range children() { return child_range(&Allocator, &Allocator + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&Allocator, &Allocator + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_allocator;
+  }
+};
+
+/// This represents clause 'allocate' in the '#pragma omp ...' directives.
+///
+/// \code
+/// #pragma omp parallel private(a) allocate(omp_default_mem_alloc :a)
+/// \endcode
+/// In this example directive '#pragma omp parallel' has clause 'private'
+/// and clause 'allocate' for the variable 'a'.
+class OMPAllocateClause final
+    : public OMPVarListClause<OMPAllocateClause>,
+      private llvm::TrailingObjects<OMPAllocateClause, Expr *> {
+  friend class OMPClauseReader;
+  friend OMPVarListClause;
+  friend TrailingObjects;
+
+  /// Allocator specified in the clause, or 'nullptr' if the default one is
+  /// used.
+  Expr *Allocator = nullptr;
+  /// Position of the ':' delimiter in the clause;
+  SourceLocation ColonLoc;
+
+  /// Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param Allocator Allocator expression.
+  /// \param ColonLoc Location of ':' delimiter.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  OMPAllocateClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                    Expr *Allocator, SourceLocation ColonLoc,
+                    SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPAllocateClause>(OMPC_allocate, StartLoc, LParenLoc,
+                                            EndLoc, N),
+        Allocator(Allocator), ColonLoc(ColonLoc) {}
+
+  /// Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  explicit OMPAllocateClause(unsigned N)
+      : OMPVarListClause<OMPAllocateClause>(OMPC_allocate, SourceLocation(),
+                                            SourceLocation(), SourceLocation(),
+                                            N) {}
+
+  /// Sets location of ':' symbol in clause.
+  void setColonLoc(SourceLocation CL) { ColonLoc = CL; }
+
+  void setAllocator(Expr *A) { Allocator = A; }
+
+public:
+  /// Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param Allocator Allocator expression.
+  /// \param ColonLoc Location of ':' delimiter.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the variables.
+  static OMPAllocateClause *Create(const ASTContext &C, SourceLocation StartLoc,
+                                   SourceLocation LParenLoc, Expr *Allocator,
+                                   SourceLocation ColonLoc,
+                                   SourceLocation EndLoc, ArrayRef<Expr *> VL);
+
+  /// Returns the allocator expression or nullptr, if no allocator is specified.
+  Expr *getAllocator() const { return Allocator; }
+
+  /// Returns the location of the ':' delimiter.
+  SourceLocation getColonLoc() const { return ColonLoc; }
+
+  /// Creates an empty clause with the place for \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  static OMPAllocateClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPAllocateClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_allocate;
   }
 };
 
@@ -315,7 +436,7 @@ class OMPIfClause : public OMPClause, public OMPClauseWithPreInit {
   SourceLocation ColonLoc;
 
   /// Directive name modifier for the clause.
-  OpenMPDirectiveKind NameModifier = OMPD_unknown;
+  OpenMPDirectiveKind NameModifier = llvm::omp::OMPD_unknown;
 
   /// Name modifier location.
   SourceLocation NameModifierLoc;
@@ -380,6 +501,16 @@ public:
 
   child_range children() { return child_range(&Condition, &Condition + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&Condition, &Condition + 1);
+  }
+
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPIfClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_if;
   }
@@ -392,7 +523,7 @@ public:
 /// \endcode
 /// In this example directive '#pragma omp task' has simple 'final'
 /// clause with condition 'a > 5'.
-class OMPFinalClause : public OMPClause {
+class OMPFinalClause : public OMPClause, public OMPClauseWithPreInit {
   friend class OMPClauseReader;
 
   /// Location of '('.
@@ -407,18 +538,25 @@ class OMPFinalClause : public OMPClause {
 public:
   /// Build 'final' clause with condition \a Cond.
   ///
+  /// \param Cond Condition of the clause.
+  /// \param HelperCond Helper condition for the construct.
+  /// \param CaptureRegion Innermost OpenMP region where expressions in this
+  /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
-  /// \param Cond Condition of the clause.
   /// \param EndLoc Ending location of the clause.
-  OMPFinalClause(Expr *Cond, SourceLocation StartLoc, SourceLocation LParenLoc,
-                 SourceLocation EndLoc)
-      : OMPClause(OMPC_final, StartLoc, EndLoc), LParenLoc(LParenLoc),
-        Condition(Cond) {}
+  OMPFinalClause(Expr *Cond, Stmt *HelperCond,
+                 OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
+                 SourceLocation LParenLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_final, StartLoc, EndLoc), OMPClauseWithPreInit(this),
+        LParenLoc(LParenLoc), Condition(Cond) {
+    setPreInitStmt(HelperCond, CaptureRegion);
+  }
 
   /// Build an empty clause.
   OMPFinalClause()
-      : OMPClause(OMPC_final, SourceLocation(), SourceLocation()) {}
+      : OMPClause(OMPC_final, SourceLocation(), SourceLocation()),
+        OMPClauseWithPreInit(this) {}
 
   /// Sets the location of '('.
   void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
@@ -430,6 +568,16 @@ public:
   Expr *getCondition() const { return cast_or_null<Expr>(Condition); }
 
   child_range children() { return child_range(&Condition, &Condition + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Condition, &Condition + 1);
+  }
+
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPFinalClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_final;
@@ -492,6 +640,17 @@ public:
 
   child_range children() { return child_range(&NumThreads, &NumThreads + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&NumThreads, &NumThreads + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_num_threads;
   }
@@ -547,6 +706,17 @@ public:
 
   child_range children() { return child_range(&Safelen, &Safelen + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&Safelen, &Safelen + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_safelen;
   }
@@ -600,6 +770,17 @@ public:
   Expr *getSimdlen() const { return cast_or_null<Expr>(Simdlen); }
 
   child_range children() { return child_range(&Simdlen, &Simdlen + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Simdlen, &Simdlen + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_simdlen;
@@ -656,6 +837,17 @@ public:
 
   child_range children() { return child_range(&NumForLoops, &NumForLoops + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&NumForLoops, &NumForLoops + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_collapse;
   }
@@ -675,7 +867,7 @@ class OMPDefaultClause : public OMPClause {
   SourceLocation LParenLoc;
 
   /// A kind of the 'default' clause.
-  OpenMPDefaultClauseKind Kind = OMPC_DEFAULT_unknown;
+  llvm::omp::DefaultKind Kind = llvm::omp::OMP_DEFAULT_unknown;
 
   /// Start location of the kind in source code.
   SourceLocation KindKwLoc;
@@ -683,7 +875,7 @@ class OMPDefaultClause : public OMPClause {
   /// Set kind of the clauses.
   ///
   /// \param K Argument of clause.
-  void setDefaultKind(OpenMPDefaultClauseKind K) { Kind = K; }
+  void setDefaultKind(llvm::omp::DefaultKind K) { Kind = K; }
 
   /// Set argument location.
   ///
@@ -698,7 +890,7 @@ public:
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
-  OMPDefaultClause(OpenMPDefaultClauseKind A, SourceLocation ALoc,
+  OMPDefaultClause(llvm::omp::DefaultKind A, SourceLocation ALoc,
                    SourceLocation StartLoc, SourceLocation LParenLoc,
                    SourceLocation EndLoc)
       : OMPClause(OMPC_default, StartLoc, EndLoc), LParenLoc(LParenLoc),
@@ -715,13 +907,24 @@ public:
   SourceLocation getLParenLoc() const { return LParenLoc; }
 
   /// Returns kind of the clause.
-  OpenMPDefaultClauseKind getDefaultKind() const { return Kind; }
+  llvm::omp::DefaultKind getDefaultKind() const { return Kind; }
 
   /// Returns location of clause kind.
   SourceLocation getDefaultKindKwLoc() const { return KindKwLoc; }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -744,7 +947,7 @@ class OMPProcBindClause : public OMPClause {
   SourceLocation LParenLoc;
 
   /// A kind of the 'proc_bind' clause.
-  OpenMPProcBindClauseKind Kind = OMPC_PROC_BIND_unknown;
+  llvm::omp::ProcBindKind Kind = llvm::omp::OMP_PROC_BIND_unknown;
 
   /// Start location of the kind in source code.
   SourceLocation KindKwLoc;
@@ -752,7 +955,7 @@ class OMPProcBindClause : public OMPClause {
   /// Set kind of the clause.
   ///
   /// \param K Kind of clause.
-  void setProcBindKind(OpenMPProcBindClauseKind K) { Kind = K; }
+  void setProcBindKind(llvm::omp::ProcBindKind K) { Kind = K; }
 
   /// Set clause kind location.
   ///
@@ -768,7 +971,7 @@ public:
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
-  OMPProcBindClause(OpenMPProcBindClauseKind A, SourceLocation ALoc,
+  OMPProcBindClause(llvm::omp::ProcBindKind A, SourceLocation ALoc,
                     SourceLocation StartLoc, SourceLocation LParenLoc,
                     SourceLocation EndLoc)
       : OMPClause(OMPC_proc_bind, StartLoc, EndLoc), LParenLoc(LParenLoc),
@@ -785,13 +988,24 @@ public:
   SourceLocation getLParenLoc() const { return LParenLoc; }
 
   /// Returns kind of the clause.
-  OpenMPProcBindClauseKind getProcBindKind() const { return Kind; }
+  llvm::omp::ProcBindKind getProcBindKind() const { return Kind; }
 
   /// Returns location of clause kind.
   SourceLocation getProcBindKindKwLoc() const { return KindKwLoc; }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -825,6 +1039,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_unified_address;
   }
@@ -854,6 +1079,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -887,6 +1123,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_reverse_offload;
   }
@@ -917,6 +1164,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -996,6 +1254,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -1179,6 +1448,18 @@ public:
                        reinterpret_cast<Stmt **>(&ChunkSize) + 1);
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPScheduleClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_schedule;
   }
@@ -1264,6 +1545,17 @@ public:
 
   child_range children() { return child_range(&NumForLoops, &NumForLoops + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&NumForLoops, &NumForLoops + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_ordered;
   }
@@ -1292,6 +1584,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_nowait;
   }
@@ -1318,6 +1621,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -1349,6 +1663,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_mergeable;
   }
@@ -1374,6 +1699,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -1404,6 +1740,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_write;
   }
@@ -1416,21 +1763,126 @@ public:
 /// #pragma omp atomic update
 /// \endcode
 /// In this example directive '#pragma omp atomic' has 'update' clause.
-class OMPUpdateClause : public OMPClause {
-public:
+/// Also, this class represents 'update' clause in  '#pragma omp depobj'
+/// directive.
+///
+/// \code
+/// #pragma omp depobj(a) update(in)
+/// \endcode
+/// In this example directive '#pragma omp depobj' has 'update' clause with 'in'
+/// dependence kind.
+class OMPUpdateClause final
+    : public OMPClause,
+      private llvm::TrailingObjects<OMPUpdateClause, SourceLocation,
+                                    OpenMPDependClauseKind> {
+  friend class OMPClauseReader;
+  friend TrailingObjects;
+
+  /// true if extended version of the clause for 'depobj' directive.
+  bool IsExtended = false;
+
+  /// Define the sizes of each trailing object array except the last one. This
+  /// is required for TrailingObjects to work properly.
+  size_t numTrailingObjects(OverloadToken<SourceLocation>) const {
+    // 2 locations: for '(' and argument location.
+    return IsExtended ? 2 : 0;
+  }
+
+  /// Sets the the location of '(' in clause for 'depobj' directive.
+  void setLParenLoc(SourceLocation Loc) {
+    assert(IsExtended && "Expected extended clause.");
+    *getTrailingObjects<SourceLocation>() = Loc;
+  }
+
+  /// Sets the the location of '(' in clause for 'depobj' directive.
+  void setArgumentLoc(SourceLocation Loc) {
+    assert(IsExtended && "Expected extended clause.");
+    *std::next(getTrailingObjects<SourceLocation>(), 1) = Loc;
+  }
+
+  /// Sets the dependence kind for the clause for 'depobj' directive.
+  void setDependencyKind(OpenMPDependClauseKind DK) {
+    assert(IsExtended && "Expected extended clause.");
+    *getTrailingObjects<OpenMPDependClauseKind>() = DK;
+  }
+
   /// Build 'update' clause.
   ///
   /// \param StartLoc Starting location of the clause.
   /// \param EndLoc Ending location of the clause.
-  OMPUpdateClause(SourceLocation StartLoc, SourceLocation EndLoc)
-      : OMPClause(OMPC_update, StartLoc, EndLoc) {}
+  OMPUpdateClause(SourceLocation StartLoc, SourceLocation EndLoc,
+                  bool IsExtended)
+      : OMPClause(OMPC_update, StartLoc, EndLoc), IsExtended(IsExtended) {}
 
   /// Build an empty clause.
-  OMPUpdateClause()
-      : OMPClause(OMPC_update, SourceLocation(), SourceLocation()) {}
+  OMPUpdateClause(bool IsExtended)
+      : OMPClause(OMPC_update, SourceLocation(), SourceLocation()),
+        IsExtended(IsExtended) {}
+
+public:
+  /// Creates clause for 'atomic' directive.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  static OMPUpdateClause *Create(const ASTContext &C, SourceLocation StartLoc,
+                                 SourceLocation EndLoc);
+
+  /// Creates clause for 'depobj' directive.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param ArgumentLoc Location of the argument.
+  /// \param DK Dependence kind.
+  /// \param EndLoc Ending location of the clause.
+  static OMPUpdateClause *Create(const ASTContext &C, SourceLocation StartLoc,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation ArgumentLoc,
+                                 OpenMPDependClauseKind DK,
+                                 SourceLocation EndLoc);
+
+  /// Creates an empty clause with the place for \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param IsExtended true if extended clause for 'depobj' directive must be
+  /// created.
+  static OMPUpdateClause *CreateEmpty(const ASTContext &C, bool IsExtended);
+
+  /// Checks if the clause is the extended clauses for 'depobj' directive.
+  bool isExtended() const { return IsExtended; }
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  /// Gets the the location of '(' in clause for 'depobj' directive.
+  SourceLocation getLParenLoc() const {
+    assert(IsExtended && "Expected extended clause.");
+    return *getTrailingObjects<SourceLocation>();
+  }
+
+  /// Gets the the location of argument in clause for 'depobj' directive.
+  SourceLocation getArgumentLoc() const {
+    assert(IsExtended && "Expected extended clause.");
+    return *std::next(getTrailingObjects<SourceLocation>(), 1);
+  }
+
+  /// Gets the dependence kind in clause for 'depobj' directive.
+  OpenMPDependClauseKind getDependencyKind() const {
+    assert(IsExtended && "Expected extended clause.");
+    return *getTrailingObjects<OpenMPDependClauseKind>();
   }
 
   static bool classof(const OMPClause *T) {
@@ -1462,6 +1914,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_capture;
   }
@@ -1491,8 +1954,179 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_seq_cst;
+  }
+};
+
+/// This represents 'acq_rel' clause in the '#pragma omp atomic|flush'
+/// directives.
+///
+/// \code
+/// #pragma omp flush acq_rel
+/// \endcode
+/// In this example directive '#pragma omp flush' has 'acq_rel' clause.
+class OMPAcqRelClause final : public OMPClause {
+public:
+  /// Build 'ack_rel' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  OMPAcqRelClause(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_acq_rel, StartLoc, EndLoc) {}
+
+  /// Build an empty clause.
+  OMPAcqRelClause()
+      : OMPClause(OMPC_acq_rel, SourceLocation(), SourceLocation()) {}
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_acq_rel;
+  }
+};
+
+/// This represents 'acquire' clause in the '#pragma omp atomic|flush'
+/// directives.
+///
+/// \code
+/// #pragma omp flush acquire
+/// \endcode
+/// In this example directive '#pragma omp flush' has 'acquire' clause.
+class OMPAcquireClause final : public OMPClause {
+public:
+  /// Build 'acquire' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  OMPAcquireClause(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_acquire, StartLoc, EndLoc) {}
+
+  /// Build an empty clause.
+  OMPAcquireClause()
+      : OMPClause(OMPC_acquire, SourceLocation(), SourceLocation()) {}
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_acquire;
+  }
+};
+
+/// This represents 'release' clause in the '#pragma omp atomic|flush'
+/// directives.
+///
+/// \code
+/// #pragma omp flush release
+/// \endcode
+/// In this example directive '#pragma omp flush' has 'release' clause.
+class OMPReleaseClause final : public OMPClause {
+public:
+  /// Build 'release' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  OMPReleaseClause(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_release, StartLoc, EndLoc) {}
+
+  /// Build an empty clause.
+  OMPReleaseClause()
+      : OMPClause(OMPC_release, SourceLocation(), SourceLocation()) {}
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_release;
+  }
+};
+
+/// This represents 'relaxed' clause in the '#pragma omp atomic'
+/// directives.
+///
+/// \code
+/// #pragma omp atomic relaxed
+/// \endcode
+/// In this example directive '#pragma omp atomic' has 'relaxed' clause.
+class OMPRelaxedClause final : public OMPClause {
+public:
+  /// Build 'relaxed' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  OMPRelaxedClause(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_relaxed, StartLoc, EndLoc) {}
+
+  /// Build an empty clause.
+  OMPRelaxedClause()
+      : OMPClause(OMPC_relaxed, SourceLocation(), SourceLocation()) {}
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_relaxed;
   }
 };
 
@@ -1582,6 +2216,18 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPPrivateClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -1711,6 +2357,20 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPFirstprivateClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPFirstprivateClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_firstprivate;
   }
@@ -1748,6 +2408,13 @@ class OMPLastprivateClause final
   friend OMPVarListClause;
   friend TrailingObjects;
 
+  /// Optional lastprivate kind, e.g. 'conditional', if specified by user.
+  OpenMPLastprivateModifier LPKind;
+  /// Optional location of the lasptrivate kind, if specified by user.
+  SourceLocation LPKindLoc;
+  /// Optional colon location, if specified by user.
+  SourceLocation ColonLoc;
+
   /// Build clause with number of variables \a N.
   ///
   /// \param StartLoc Starting location of the clause.
@@ -1755,10 +2422,13 @@ class OMPLastprivateClause final
   /// \param EndLoc Ending location of the clause.
   /// \param N Number of the variables in the clause.
   OMPLastprivateClause(SourceLocation StartLoc, SourceLocation LParenLoc,
-                       SourceLocation EndLoc, unsigned N)
+                       SourceLocation EndLoc, OpenMPLastprivateModifier LPKind,
+                       SourceLocation LPKindLoc, SourceLocation ColonLoc,
+                       unsigned N)
       : OMPVarListClause<OMPLastprivateClause>(OMPC_lastprivate, StartLoc,
                                                LParenLoc, EndLoc, N),
-        OMPClauseWithPostUpdate(this) {}
+        OMPClauseWithPostUpdate(this), LPKind(LPKind), LPKindLoc(LPKindLoc),
+        ColonLoc(ColonLoc) {}
 
   /// Build an empty clause.
   ///
@@ -1819,6 +2489,13 @@ class OMPLastprivateClause final
     return llvm::makeArrayRef(getDestinationExprs().end(), varlist_size());
   }
 
+  /// Sets lastprivate kind.
+  void setKind(OpenMPLastprivateModifier Kind) { LPKind = Kind; }
+  /// Sets location of the lastprivate kind.
+  void setKindLoc(SourceLocation Loc) { LPKindLoc = Loc; }
+  /// Sets colon symbol location.
+  void setColonLoc(SourceLocation Loc) { ColonLoc = Loc; }
+
 public:
   /// Creates clause with a list of variables \a VL.
   ///
@@ -1840,6 +2517,9 @@ public:
   /// \endcode
   /// Required for proper codegen of final assignment performed by the
   /// lastprivate clause.
+  /// \param LPKind Lastprivate kind, e.g. 'conditional'.
+  /// \param LPKindLoc Location of the lastprivate kind.
+  /// \param ColonLoc Location of the ':' symbol if lastprivate kind is used.
   /// \param PreInit Statement that must be executed before entering the OpenMP
   /// region with this clause.
   /// \param PostUpdate Expression that must be executed after exit from the
@@ -1848,13 +2528,21 @@ public:
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
          SourceLocation EndLoc, ArrayRef<Expr *> VL, ArrayRef<Expr *> SrcExprs,
          ArrayRef<Expr *> DstExprs, ArrayRef<Expr *> AssignmentOps,
-         Stmt *PreInit, Expr *PostUpdate);
+         OpenMPLastprivateModifier LPKind, SourceLocation LPKindLoc,
+         SourceLocation ColonLoc, Stmt *PreInit, Expr *PostUpdate);
 
   /// Creates an empty clause with the place for \a N variables.
   ///
   /// \param C AST context.
   /// \param N The number of variables.
   static OMPLastprivateClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  /// Lastprivate kind.
+  OpenMPLastprivateModifier getKind() const { return LPKind; }
+  /// Returns the location of the lastprivate kind.
+  SourceLocation getKindLoc() const { return LPKindLoc; }
+  /// Returns the location of the ':' symbol, if any.
+  SourceLocation getColonLoc() const { return ColonLoc; }
 
   using helper_expr_iterator = MutableArrayRef<Expr *>::iterator;
   using helper_expr_const_iterator = ArrayRef<const Expr *>::iterator;
@@ -1908,6 +2596,18 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPLastprivateClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -1970,6 +2670,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPSharedClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_shared;
   }
@@ -1991,6 +2703,12 @@ class OMPReductionClause final
   friend OMPVarListClause;
   friend TrailingObjects;
 
+  /// Reduction modifier.
+  OpenMPReductionClauseModifier Modifier = OMPC_REDUCTION_unknown;
+
+  /// Reduction modifier location.
+  SourceLocation ModifierLoc;
+
   /// Location of ':'.
   SourceLocation ColonLoc;
 
@@ -2004,18 +2722,22 @@ class OMPReductionClause final
   ///
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
-  /// \param EndLoc Ending location of the clause.
+  /// \param ModifierLoc Modifier location.
   /// \param ColonLoc Location of ':'.
+  /// \param EndLoc Ending location of the clause.
   /// \param N Number of the variables in the clause.
   /// \param QualifierLoc The nested-name qualifier with location information
   /// \param NameInfo The full name info for reduction identifier.
   OMPReductionClause(SourceLocation StartLoc, SourceLocation LParenLoc,
-                     SourceLocation ColonLoc, SourceLocation EndLoc, unsigned N,
+                     SourceLocation ModifierLoc, SourceLocation ColonLoc,
+                     SourceLocation EndLoc,
+                     OpenMPReductionClauseModifier Modifier, unsigned N,
                      NestedNameSpecifierLoc QualifierLoc,
                      const DeclarationNameInfo &NameInfo)
       : OMPVarListClause<OMPReductionClause>(OMPC_reduction, StartLoc,
                                              LParenLoc, EndLoc, N),
-        OMPClauseWithPostUpdate(this), ColonLoc(ColonLoc),
+        OMPClauseWithPostUpdate(this), Modifier(Modifier),
+        ModifierLoc(ModifierLoc), ColonLoc(ColonLoc),
         QualifierLoc(QualifierLoc), NameInfo(NameInfo) {}
 
   /// Build an empty clause.
@@ -2026,6 +2748,12 @@ class OMPReductionClause final
                                              SourceLocation(), SourceLocation(),
                                              N),
         OMPClauseWithPostUpdate(this) {}
+
+  /// Sets reduction modifier.
+  void setModifier(OpenMPReductionClauseModifier M) { Modifier = M; }
+
+  /// Sets location of the modifier.
+  void setModifierLoc(SourceLocation Loc) { ModifierLoc = Loc; }
 
   /// Sets location of ':' symbol in clause.
   void setColonLoc(SourceLocation CL) { ColonLoc = CL; }
@@ -2096,6 +2824,7 @@ public:
   ///
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
+  /// \param ModifierLoc Modifier location.
   /// \param ColonLoc Location of ':'.
   /// \param EndLoc Ending location of the clause.
   /// \param VL The variables in the clause.
@@ -2126,8 +2855,9 @@ public:
   /// OpenMP region with this clause.
   static OMPReductionClause *
   Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
-         SourceLocation ColonLoc, SourceLocation EndLoc, ArrayRef<Expr *> VL,
-         NestedNameSpecifierLoc QualifierLoc,
+         SourceLocation ModifierLoc, SourceLocation ColonLoc,
+         SourceLocation EndLoc, OpenMPReductionClauseModifier Modifier,
+         ArrayRef<Expr *> VL, NestedNameSpecifierLoc QualifierLoc,
          const DeclarationNameInfo &NameInfo, ArrayRef<Expr *> Privates,
          ArrayRef<Expr *> LHSExprs, ArrayRef<Expr *> RHSExprs,
          ArrayRef<Expr *> ReductionOps, Stmt *PreInit, Expr *PostUpdate);
@@ -2137,6 +2867,12 @@ public:
   /// \param C AST context.
   /// \param N The number of variables.
   static OMPReductionClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  /// Returns modifier.
+  OpenMPReductionClauseModifier getModifier() const { return Modifier; }
+
+  /// Returns modifier location.
+  SourceLocation getModifierLoc() const { return ModifierLoc; }
 
   /// Gets location of ':' symbol in clause.
   SourceLocation getColonLoc() const { return ColonLoc; }
@@ -2190,6 +2926,20 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPReductionClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPReductionClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
   }
 
   static bool classof(const OMPClause *T) {
@@ -2410,6 +3160,18 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPTaskReductionClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -2655,6 +3417,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPInReductionClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_in_reduction;
   }
@@ -2758,6 +3532,14 @@ class OMPLinearClause final
     return llvm::makeArrayRef(getUpdates().end(), varlist_size());
   }
 
+  /// Gets the list of used expressions for linear variables.
+  MutableArrayRef<Expr *> getUsedExprs() {
+    return MutableArrayRef<Expr *>(getFinals().end() + 2, varlist_size() + 1);
+  }
+  ArrayRef<const Expr *> getUsedExprs() const {
+    return llvm::makeArrayRef(getFinals().end() + 2, varlist_size() + 1);
+  }
+
   /// Sets the list of the copies of original linear variables.
   /// \param PL List of expressions.
   void setPrivates(ArrayRef<Expr *> PL);
@@ -2837,6 +3619,9 @@ public:
   /// \param FL List of expressions.
   void setFinals(ArrayRef<Expr *> FL);
 
+  /// Sets the list of used expressions for the linear clause.
+  void setUsedExprs(ArrayRef<Expr *> UE);
+
   using privates_iterator = MutableArrayRef<Expr *>::iterator;
   using privates_const_iterator = ArrayRef<const Expr *>::iterator;
   using privates_range = llvm::iterator_range<privates_iterator>;
@@ -2889,9 +3674,36 @@ public:
     return finals_const_range(getFinals().begin(), getFinals().end());
   }
 
+  using used_expressions_iterator = MutableArrayRef<Expr *>::iterator;
+  using used_expressions_const_iterator = ArrayRef<const Expr *>::iterator;
+  using used_expressions_range =
+      llvm::iterator_range<used_expressions_iterator>;
+  using used_expressions_const_range =
+      llvm::iterator_range<used_expressions_const_iterator>;
+
+  used_expressions_range used_expressions() {
+    return finals_range(getUsedExprs().begin(), getUsedExprs().end());
+  }
+
+  used_expressions_const_range used_expressions() const {
+    return finals_const_range(getUsedExprs().begin(), getUsedExprs().end());
+  }
+
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPLinearClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children();
+
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPLinearClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
   }
 
   static bool classof(const OMPClause *T) {
@@ -2979,6 +3791,18 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPAlignedClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -3145,6 +3969,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPCopyinClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_copyin;
   }
@@ -3296,6 +4132,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPCopyprivateClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_copyprivate;
   }
@@ -3361,8 +4209,106 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPFlushClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_flush;
+  }
+};
+
+/// This represents implicit clause 'depobj' for the '#pragma omp depobj'
+/// directive.
+/// This clause does not exist by itself, it can be only as a part of 'omp
+/// depobj' directive. This clause is introduced to keep the original structure
+/// of \a OMPExecutableDirective class and its derivatives and to use the
+/// existing infrastructure of clauses with the list of variables.
+///
+/// \code
+/// #pragma omp depobj(a) destroy
+/// \endcode
+/// In this example directive '#pragma omp depobj' has implicit clause 'depobj'
+/// with the depobj 'a'.
+class OMPDepobjClause final : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// Location of '('.
+  SourceLocation LParenLoc;
+
+  /// Chunk size.
+  Expr *Depobj = nullptr;
+
+  /// Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  OMPDepobjClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                  SourceLocation EndLoc)
+      : OMPClause(OMPC_depobj, StartLoc, EndLoc), LParenLoc(LParenLoc) {}
+
+  /// Build an empty clause.
+  ///
+  explicit OMPDepobjClause()
+      : OMPClause(OMPC_depobj, SourceLocation(), SourceLocation()) {}
+
+  void setDepobj(Expr *E) { Depobj = E; }
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+public:
+  /// Creates clause.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param Depobj depobj expression associated with the 'depobj' directive.
+  static OMPDepobjClause *Create(const ASTContext &C, SourceLocation StartLoc,
+                                 SourceLocation LParenLoc,
+                                 SourceLocation EndLoc, Expr *Depobj);
+
+  /// Creates an empty clause.
+  ///
+  /// \param C AST context.
+  static OMPDepobjClause *CreateEmpty(const ASTContext &C);
+
+  /// Returns depobj expression associated with the clause.
+  Expr *getDepobj() { return Depobj; }
+  const Expr *getDepobj() const { return Depobj; }
+
+  /// Returns the location of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&Depobj),
+                       reinterpret_cast<Stmt **>(&Depobj) + 1);
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPDepobjClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_depobj;
   }
 };
 
@@ -3480,6 +4426,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPDependClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_depend;
   }
@@ -3499,6 +4457,12 @@ class OMPDeviceClause : public OMPClause, public OMPClauseWithPreInit {
   /// Location of '('.
   SourceLocation LParenLoc;
 
+  /// Device clause modifier.
+  OpenMPDeviceClauseModifier Modifier = OMPC_DEVICE_unknown;
+
+  /// Location of the modifier.
+  SourceLocation ModifierLoc;
+
   /// Device number.
   Stmt *Device = nullptr;
 
@@ -3507,20 +4471,30 @@ class OMPDeviceClause : public OMPClause, public OMPClauseWithPreInit {
   /// \param E Device number.
   void setDevice(Expr *E) { Device = E; }
 
+  /// Sets modifier.
+  void setModifier(OpenMPDeviceClauseModifier M) { Modifier = M; }
+
+  /// Setst modifier location.
+  void setModifierLoc(SourceLocation Loc) { ModifierLoc = Loc; }
+
 public:
   /// Build 'device' clause.
   ///
+  /// \param Modifier Clause modifier.
   /// \param E Expression associated with this clause.
   /// \param CaptureRegion Innermost OpenMP region where expressions in this
   /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
+  /// \param ModifierLoc Modifier location.
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
-  OMPDeviceClause(Expr *E, Stmt *HelperE, OpenMPDirectiveKind CaptureRegion,
-                  SourceLocation StartLoc, SourceLocation LParenLoc,
+  OMPDeviceClause(OpenMPDeviceClauseModifier Modifier, Expr *E, Stmt *HelperE,
+                  OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
+                  SourceLocation LParenLoc, SourceLocation ModifierLoc,
                   SourceLocation EndLoc)
       : OMPClause(OMPC_device, StartLoc, EndLoc), OMPClauseWithPreInit(this),
-        LParenLoc(LParenLoc), Device(E) {
+        LParenLoc(LParenLoc), Modifier(Modifier), ModifierLoc(ModifierLoc),
+        Device(E) {
     setPreInitStmt(HelperE, CaptureRegion);
   }
 
@@ -3541,7 +4515,24 @@ public:
   /// Return device number.
   Expr *getDevice() const { return cast<Expr>(Device); }
 
+  /// Gets modifier.
+  OpenMPDeviceClauseModifier getModifier() const { return Modifier; }
+
+  /// Gets modifier location.
+  SourceLocation getModifierLoc() const { return ModifierLoc; }
+
   child_range children() { return child_range(&Device, &Device + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Device, &Device + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_device;
@@ -3571,6 +4562,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_threads;
   }
@@ -3596,6 +4598,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -4430,6 +5443,23 @@ public:
         reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPMapClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    if (MapType == OMPC_MAP_to || MapType == OMPC_MAP_tofrom)
+      return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                         reinterpret_cast<Stmt **>(varlist_end()));
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPMapClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_map;
   }
@@ -4493,6 +5523,17 @@ public:
   Expr *getNumTeams() const { return cast<Expr>(NumTeams); }
 
   child_range children() { return child_range(&NumTeams, &NumTeams + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&NumTeams, &NumTeams + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_num_teams;
@@ -4559,6 +5600,17 @@ public:
 
   child_range children() { return child_range(&ThreadLimit, &ThreadLimit + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&ThreadLimit, &ThreadLimit + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_thread_limit;
   }
@@ -4572,7 +5624,7 @@ public:
 /// \endcode
 /// In this example directive '#pragma omp teams' has clause 'priority' with
 /// single expression 'n'.
-class OMPPriorityClause : public OMPClause {
+class OMPPriorityClause : public OMPClause, public OMPClauseWithPreInit {
   friend class OMPClauseReader;
 
   /// Location of '('.
@@ -4589,18 +5641,25 @@ class OMPPriorityClause : public OMPClause {
 public:
   /// Build 'priority' clause.
   ///
-  /// \param E Expression associated with this clause.
+  /// \param Priority Expression associated with this clause.
+  /// \param HelperPriority Helper priority for the construct.
+  /// \param CaptureRegion Innermost OpenMP region where expressions in this
+  /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
   /// \param LParenLoc Location of '('.
   /// \param EndLoc Ending location of the clause.
-  OMPPriorityClause(Expr *E, SourceLocation StartLoc, SourceLocation LParenLoc,
-                    SourceLocation EndLoc)
-      : OMPClause(OMPC_priority, StartLoc, EndLoc), LParenLoc(LParenLoc),
-        Priority(E) {}
+  OMPPriorityClause(Expr *Priority, Stmt *HelperPriority,
+                    OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
+                    SourceLocation LParenLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_priority, StartLoc, EndLoc), OMPClauseWithPreInit(this),
+        LParenLoc(LParenLoc), Priority(Priority) {
+    setPreInitStmt(HelperPriority, CaptureRegion);
+  }
 
   /// Build an empty clause.
   OMPPriorityClause()
-      : OMPClause(OMPC_priority, SourceLocation(), SourceLocation()) {}
+      : OMPClause(OMPC_priority, SourceLocation(), SourceLocation()),
+        OMPClauseWithPreInit(this) {}
 
   /// Sets the location of '('.
   void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
@@ -4616,6 +5675,16 @@ public:
 
   child_range children() { return child_range(&Priority, &Priority + 1); }
 
+  const_child_range children() const {
+    return const_child_range(&Priority, &Priority + 1);
+  }
+
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPPriorityClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_priority;
   }
@@ -4629,7 +5698,7 @@ public:
 /// \endcode
 /// In this example directive '#pragma omp taskloop' has clause 'grainsize'
 /// with single expression '4'.
-class OMPGrainsizeClause : public OMPClause {
+class OMPGrainsizeClause : public OMPClause, public OMPClauseWithPreInit {
   friend class OMPClauseReader;
 
   /// Location of '('.
@@ -4645,16 +5714,23 @@ public:
   /// Build 'grainsize' clause.
   ///
   /// \param Size Expression associated with this clause.
+  /// \param HelperSize Helper grainsize for the construct.
+  /// \param CaptureRegion Innermost OpenMP region where expressions in this
+  /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
   /// \param EndLoc Ending location of the clause.
-  OMPGrainsizeClause(Expr *Size, SourceLocation StartLoc,
+  OMPGrainsizeClause(Expr *Size, Stmt *HelperSize,
+                     OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
                      SourceLocation LParenLoc, SourceLocation EndLoc)
-      : OMPClause(OMPC_grainsize, StartLoc, EndLoc), LParenLoc(LParenLoc),
-        Grainsize(Size) {}
+      : OMPClause(OMPC_grainsize, StartLoc, EndLoc), OMPClauseWithPreInit(this),
+        LParenLoc(LParenLoc), Grainsize(Size) {
+    setPreInitStmt(HelperSize, CaptureRegion);
+  }
 
   /// Build an empty clause.
   explicit OMPGrainsizeClause()
-      : OMPClause(OMPC_grainsize, SourceLocation(), SourceLocation()) {}
+      : OMPClause(OMPC_grainsize, SourceLocation(), SourceLocation()),
+        OMPClauseWithPreInit(this) {}
 
   /// Sets the location of '('.
   void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
@@ -4666,6 +5742,16 @@ public:
   Expr *getGrainsize() const { return cast_or_null<Expr>(Grainsize); }
 
   child_range children() { return child_range(&Grainsize, &Grainsize + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Grainsize, &Grainsize + 1);
+  }
+
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPGrainsizeClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_grainsize;
@@ -4695,6 +5781,17 @@ public:
     return child_range(child_iterator(), child_iterator());
   }
 
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_nogroup;
   }
@@ -4708,7 +5805,7 @@ public:
 /// \endcode
 /// In this example directive '#pragma omp taskloop' has clause 'num_tasks'
 /// with single expression '4'.
-class OMPNumTasksClause : public OMPClause {
+class OMPNumTasksClause : public OMPClause, public OMPClauseWithPreInit {
   friend class OMPClauseReader;
 
   /// Location of '('.
@@ -4724,16 +5821,23 @@ public:
   /// Build 'num_tasks' clause.
   ///
   /// \param Size Expression associated with this clause.
+  /// \param HelperSize Helper grainsize for the construct.
+  /// \param CaptureRegion Innermost OpenMP region where expressions in this
+  /// clause must be captured.
   /// \param StartLoc Starting location of the clause.
   /// \param EndLoc Ending location of the clause.
-  OMPNumTasksClause(Expr *Size, SourceLocation StartLoc,
+  OMPNumTasksClause(Expr *Size, Stmt *HelperSize,
+                    OpenMPDirectiveKind CaptureRegion, SourceLocation StartLoc,
                     SourceLocation LParenLoc, SourceLocation EndLoc)
-      : OMPClause(OMPC_num_tasks, StartLoc, EndLoc), LParenLoc(LParenLoc),
-        NumTasks(Size) {}
+      : OMPClause(OMPC_num_tasks, StartLoc, EndLoc), OMPClauseWithPreInit(this),
+        LParenLoc(LParenLoc), NumTasks(Size) {
+    setPreInitStmt(HelperSize, CaptureRegion);
+  }
 
   /// Build an empty clause.
   explicit OMPNumTasksClause()
-      : OMPClause(OMPC_num_tasks, SourceLocation(), SourceLocation()) {}
+      : OMPClause(OMPC_num_tasks, SourceLocation(), SourceLocation()),
+        OMPClauseWithPreInit(this) {}
 
   /// Sets the location of '('.
   void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
@@ -4745,6 +5849,16 @@ public:
   Expr *getNumTasks() const { return cast_or_null<Expr>(NumTasks); }
 
   child_range children() { return child_range(&NumTasks, &NumTasks + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&NumTasks, &NumTasks + 1);
+  }
+
+  child_range used_children();
+  const_child_range used_children() const {
+    auto Children = const_cast<OMPNumTasksClause *>(this)->used_children();
+    return const_child_range(Children.begin(), Children.end());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_num_tasks;
@@ -4795,6 +5909,17 @@ public:
   Expr *getHint() const { return cast_or_null<Expr>(Hint); }
 
   child_range children() { return child_range(&Hint, &Hint + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Hint, &Hint + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
 
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_hint;
@@ -4903,6 +6028,18 @@ public:
                        reinterpret_cast<Stmt **>(&ChunkSize) + 1);
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPDistScheduleClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_dist_schedule;
   }
@@ -5002,6 +6139,17 @@ public:
 
   child_range children() {
     return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -5109,6 +6257,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPToClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_to;
   }
@@ -5213,6 +6373,18 @@ public:
   child_range children() {
     return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
                        reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPFromClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 
   static bool classof(const OMPClause *T) {
@@ -5366,6 +6538,18 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPUseDevicePtrClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_use_device_ptr;
   }
@@ -5457,8 +6641,445 @@ public:
                        reinterpret_cast<Stmt **>(varlist_end()));
   }
 
+  const_child_range children() const {
+    auto Children = const_cast<OMPIsDevicePtrClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
   static bool classof(const OMPClause *T) {
     return T->getClauseKind() == OMPC_is_device_ptr;
+  }
+};
+
+/// This represents clause 'nontemporal' in the '#pragma omp ...' directives.
+///
+/// \code
+/// #pragma omp simd nontemporal(a)
+/// \endcode
+/// In this example directive '#pragma omp simd' has clause 'nontemporal' for
+/// the variable 'a'.
+class OMPNontemporalClause final
+    : public OMPVarListClause<OMPNontemporalClause>,
+      private llvm::TrailingObjects<OMPNontemporalClause, Expr *> {
+  friend class OMPClauseReader;
+  friend OMPVarListClause;
+  friend TrailingObjects;
+
+  /// Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  OMPNontemporalClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                       SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPNontemporalClause>(OMPC_nontemporal, StartLoc,
+                                               LParenLoc, EndLoc, N) {}
+
+  /// Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  explicit OMPNontemporalClause(unsigned N)
+      : OMPVarListClause<OMPNontemporalClause>(
+            OMPC_nontemporal, SourceLocation(), SourceLocation(),
+            SourceLocation(), N) {}
+
+  /// Get the list of privatied copies if the member expression was captured by
+  /// one of the privatization clauses.
+  MutableArrayRef<Expr *> getPrivateRefs() {
+    return MutableArrayRef<Expr *>(varlist_end(), varlist_size());
+  }
+  ArrayRef<const Expr *> getPrivateRefs() const {
+    return llvm::makeArrayRef(varlist_end(), varlist_size());
+  }
+
+public:
+  /// Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the variables.
+  static OMPNontemporalClause *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation LParenLoc,
+         SourceLocation EndLoc, ArrayRef<Expr *> VL);
+
+  /// Creates an empty clause with the place for \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  static OMPNontemporalClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  /// Sets the list of references to private copies created in private clauses.
+  /// \param VL List of references.
+  void setPrivateRefs(ArrayRef<Expr *> VL);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPNontemporalClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range private_refs() {
+    return child_range(reinterpret_cast<Stmt **>(getPrivateRefs().begin()),
+                       reinterpret_cast<Stmt **>(getPrivateRefs().end()));
+  }
+
+  const_child_range private_refs() const {
+    auto Children = const_cast<OMPNontemporalClause *>(this)->private_refs();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_nontemporal;
+  }
+};
+
+/// This represents 'order' clause in the '#pragma omp ...' directive.
+///
+/// \code
+/// #pragma omp simd order(concurrent)
+/// \endcode
+/// In this example directive '#pragma omp parallel' has simple 'order'
+/// clause with kind 'concurrent'.
+class OMPOrderClause final : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// Location of '('.
+  SourceLocation LParenLoc;
+
+  /// A kind of the 'default' clause.
+  OpenMPOrderClauseKind Kind = OMPC_ORDER_unknown;
+
+  /// Start location of the kind in source code.
+  SourceLocation KindKwLoc;
+
+  /// Set kind of the clause.
+  ///
+  /// \param K Argument of clause.
+  void setKind(OpenMPOrderClauseKind K) { Kind = K; }
+
+  /// Set argument location.
+  ///
+  /// \param KLoc Argument location.
+  void setKindKwLoc(SourceLocation KLoc) { KindKwLoc = KLoc; }
+
+public:
+  /// Build 'order' clause with argument \p A ('concurrent').
+  ///
+  /// \param A Argument of the clause ('concurrent').
+  /// \param ALoc Starting location of the argument.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  OMPOrderClause(OpenMPOrderClauseKind A, SourceLocation ALoc,
+                 SourceLocation StartLoc, SourceLocation LParenLoc,
+                 SourceLocation EndLoc)
+      : OMPClause(OMPC_order, StartLoc, EndLoc), LParenLoc(LParenLoc), Kind(A),
+        KindKwLoc(ALoc) {}
+
+  /// Build an empty clause.
+  OMPOrderClause()
+      : OMPClause(OMPC_order, SourceLocation(), SourceLocation()) {}
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+  /// Returns the location of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns kind of the clause.
+  OpenMPOrderClauseKind getKind() const { return Kind; }
+
+  /// Returns location of clause kind.
+  SourceLocation getKindKwLoc() const { return KindKwLoc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_order;
+  }
+};
+
+/// This represents 'destroy' clause in the '#pragma omp depobj'
+/// directive.
+///
+/// \code
+/// #pragma omp depobj(a) destroy
+/// \endcode
+/// In this example directive '#pragma omp depobj' has 'destroy' clause.
+class OMPDestroyClause final : public OMPClause {
+public:
+  /// Build 'destroy' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param EndLoc Ending location of the clause.
+  OMPDestroyClause(SourceLocation StartLoc, SourceLocation EndLoc)
+      : OMPClause(OMPC_destroy, StartLoc, EndLoc) {}
+
+  /// Build an empty clause.
+  OMPDestroyClause()
+      : OMPClause(OMPC_destroy, SourceLocation(), SourceLocation()) {}
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_destroy;
+  }
+};
+
+/// This represents 'detach' clause in the '#pragma omp task' directive.
+///
+/// \code
+/// #pragma omp task detach(evt)
+/// \endcode
+/// In this example directive '#pragma omp detach' has simple 'detach' clause
+/// with the variable 'evt'.
+class OMPDetachClause final : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// Location of '('.
+  SourceLocation LParenLoc;
+
+  /// Expression of the 'detach' clause.
+  Stmt *Evt = nullptr;
+
+  /// Set condition.
+  void setEventHandler(Expr *E) { Evt = E; }
+
+  /// Sets the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+public:
+  /// Build 'detach' clause with event-handler \a Evt.
+  ///
+  /// \param Evt Event handler expression.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  OMPDetachClause(Expr *Evt, SourceLocation StartLoc, SourceLocation LParenLoc,
+                  SourceLocation EndLoc)
+      : OMPClause(OMPC_detach, StartLoc, EndLoc), LParenLoc(LParenLoc),
+        Evt(Evt) {}
+
+  /// Build an empty clause.
+  OMPDetachClause()
+      : OMPClause(OMPC_detach, SourceLocation(), SourceLocation()) {}
+
+  /// Returns the location of '('.
+  SourceLocation getLParenLoc() const { return LParenLoc; }
+
+  /// Returns event-handler expression.
+  Expr *getEventHandler() const { return cast_or_null<Expr>(Evt); }
+
+  child_range children() { return child_range(&Evt, &Evt + 1); }
+
+  const_child_range children() const {
+    return const_child_range(&Evt, &Evt + 1);
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_detach;
+  }
+};
+
+/// This represents clause 'inclusive' in the '#pragma omp scan' directive.
+///
+/// \code
+/// #pragma omp scan inclusive(a,b)
+/// \endcode
+/// In this example directive '#pragma omp scan' has clause 'inclusive'
+/// with the variables 'a' and 'b'.
+class OMPInclusiveClause final
+    : public OMPVarListClause<OMPInclusiveClause>,
+      private llvm::TrailingObjects<OMPInclusiveClause, Expr *> {
+  friend class OMPClauseReader;
+  friend OMPVarListClause;
+  friend TrailingObjects;
+
+  /// Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  OMPInclusiveClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                     SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPInclusiveClause>(OMPC_inclusive, StartLoc,
+                                             LParenLoc, EndLoc, N) {}
+
+  /// Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  explicit OMPInclusiveClause(unsigned N)
+      : OMPVarListClause<OMPInclusiveClause>(OMPC_inclusive, SourceLocation(),
+                                             SourceLocation(), SourceLocation(),
+                                             N) {}
+
+public:
+  /// Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the original variables.
+  static OMPInclusiveClause *Create(const ASTContext &C,
+                                    SourceLocation StartLoc,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation EndLoc, ArrayRef<Expr *> VL);
+
+  /// Creates an empty clause with the place for \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  static OMPInclusiveClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPInclusiveClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_inclusive;
+  }
+};
+
+/// This represents clause 'exclusive' in the '#pragma omp scan' directive.
+///
+/// \code
+/// #pragma omp scan exclusive(a,b)
+/// \endcode
+/// In this example directive '#pragma omp scan' has clause 'exclusive'
+/// with the variables 'a' and 'b'.
+class OMPExclusiveClause final
+    : public OMPVarListClause<OMPExclusiveClause>,
+      private llvm::TrailingObjects<OMPExclusiveClause, Expr *> {
+  friend class OMPClauseReader;
+  friend OMPVarListClause;
+  friend TrailingObjects;
+
+  /// Build clause with number of variables \a N.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param N Number of the variables in the clause.
+  OMPExclusiveClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                     SourceLocation EndLoc, unsigned N)
+      : OMPVarListClause<OMPExclusiveClause>(OMPC_exclusive, StartLoc,
+                                             LParenLoc, EndLoc, N) {}
+
+  /// Build an empty clause.
+  ///
+  /// \param N Number of variables.
+  explicit OMPExclusiveClause(unsigned N)
+      : OMPVarListClause<OMPExclusiveClause>(OMPC_exclusive, SourceLocation(),
+                                             SourceLocation(), SourceLocation(),
+                                             N) {}
+
+public:
+  /// Creates clause with a list of variables \a VL.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param VL List of references to the original variables.
+  static OMPExclusiveClause *Create(const ASTContext &C,
+                                    SourceLocation StartLoc,
+                                    SourceLocation LParenLoc,
+                                    SourceLocation EndLoc, ArrayRef<Expr *> VL);
+
+  /// Creates an empty clause with the place for \a N variables.
+  ///
+  /// \param C AST context.
+  /// \param N The number of variables.
+  static OMPExclusiveClause *CreateEmpty(const ASTContext &C, unsigned N);
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(varlist_begin()),
+                       reinterpret_cast<Stmt **>(varlist_end()));
+  }
+
+  const_child_range children() const {
+    auto Children = const_cast<OMPExclusiveClause *>(this)->children();
+    return const_child_range(Children.begin(), Children.end());
+  }
+
+  child_range used_children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range used_children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_exclusive;
   }
 };
 
@@ -5467,7 +7088,7 @@ public:
 template<class ImplClass, template <typename> class Ptr, typename RetTy>
 class OMPClauseVisitorBase {
 public:
-#define PTR(CLASS) typename Ptr<CLASS>::type
+#define PTR(CLASS) Ptr<CLASS>
 #define DISPATCH(CLASS) \
   return static_cast<ImplClass*>(this)->Visit##CLASS(static_cast<PTR(CLASS)>(S))
 
@@ -5490,12 +7111,11 @@ public:
 #undef DISPATCH
 };
 
-template <typename T>
-using const_ptr = typename std::add_pointer<typename std::add_const<T>::type>;
+template <typename T> using const_ptr = std::add_pointer_t<std::add_const_t<T>>;
 
-template<class ImplClass, typename RetTy = void>
-class OMPClauseVisitor :
-      public OMPClauseVisitorBase <ImplClass, std::add_pointer, RetTy> {};
+template <class ImplClass, typename RetTy = void>
+class OMPClauseVisitor
+    : public OMPClauseVisitorBase<ImplClass, std::add_pointer_t, RetTy> {};
 template<class ImplClass, typename RetTy = void>
 class ConstOMPClauseVisitor :
       public OMPClauseVisitorBase <ImplClass, const_ptr, RetTy> {};
@@ -5514,6 +7134,59 @@ public:
 #define OPENMP_CLAUSE(Name, Class) void Visit##Class(Class *S);
 #include "clang/Basic/OpenMPKinds.def"
 };
+
+/// Helper data structure representing the traits in a match clause of an
+/// `declare variant` or `metadirective`. The outer level is an ordered
+/// collection of selector sets, each with an associated kind and an ordered
+/// collection of selectors. A selector has a kind, an optional score/condition,
+/// and an ordered collection of properties.
+class OMPTraitInfo {
+  /// Private constructor accesible only by ASTContext.
+  OMPTraitInfo() {}
+  friend class ASTContext;
+
+public:
+  struct OMPTraitProperty {
+    llvm::omp::TraitProperty Kind = llvm::omp::TraitProperty::invalid;
+  };
+  struct OMPTraitSelector {
+    Expr *ScoreOrCondition = nullptr;
+    llvm::omp::TraitSelector Kind = llvm::omp::TraitSelector::invalid;
+    llvm::SmallVector<OMPTraitProperty, 1> Properties;
+  };
+  struct OMPTraitSet {
+    llvm::omp::TraitSet Kind = llvm::omp::TraitSet::invalid;
+    llvm::SmallVector<OMPTraitSelector, 2> Selectors;
+  };
+
+  /// The outermost level of selector sets.
+  llvm::SmallVector<OMPTraitSet, 2> Sets;
+
+  bool anyScoreOrCondition(
+      llvm::function_ref<bool(Expr *&, bool /* IsScore */)> Cond) {
+    return llvm::any_of(Sets, [&](OMPTraitInfo::OMPTraitSet &Set) {
+      return llvm::any_of(
+          Set.Selectors, [&](OMPTraitInfo::OMPTraitSelector &Selector) {
+            return Cond(Selector.ScoreOrCondition,
+                        /* IsScore */ Selector.Kind !=
+                            llvm::omp::TraitSelector::user_condition);
+          });
+    });
+  }
+
+  /// Create a variant match info object from this trait info object. While the
+  /// former is a flat representation the actual main difference is that the
+  /// latter uses clang::Expr to store the score/condition while the former is
+  /// independent of clang. Thus, expressions and conditions are evaluated in
+  /// this method.
+  void getAsVariantMatchInfo(ASTContext &ASTCtx,
+                             llvm::omp::VariantMatchInfo &VMI) const;
+
+  /// Print a human readable representation into \p OS.
+  void print(llvm::raw_ostream &OS, const PrintingPolicy &Policy) const;
+};
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const OMPTraitInfo &TI);
+llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const OMPTraitInfo *TI);
 
 } // namespace clang
 

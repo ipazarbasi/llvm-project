@@ -1,6 +1,6 @@
 // RUN: llvm-mc < %s -triple=armv7-linux-gnueabi -filetype=obj -o %t -g -fdebug-compilation-dir=/tmp
 // RUN: llvm-dwarfdump -a %t | FileCheck -check-prefix DWARF %s
-// RUN: llvm-objdump -r %t | FileCheck -check-prefix RELOC %s
+// RUN: llvm-objdump -r %t | FileCheck --check-prefix=RELOC %s
 
   .section foo, "ax"
 b:
@@ -42,15 +42,17 @@ b:
 
 
 
-// RELOC: RELOCATION RECORDS FOR [.rel.debug_info]:
+// RELOC: RELOCATION RECORDS FOR [.debug_info]:
+// RELOC-NEXT: OFFSET TYPE VALUE
 // RELOC-NEXT: 00000006 R_ARM_ABS32 .debug_abbrev
 // RELOC-NEXT: 0000000c R_ARM_ABS32 .debug_line
 // RELOC-NEXT: R_ARM_ABS32 foo
 // RELOC-NEXT: R_ARM_ABS32 foo
 // RELOC-NEXT: R_ARM_ABS32 foo
 
-// RELOC-NOT: RELOCATION RECORDS FOR [.rel.debug_ranges]:
+// RELOC-NOT: RELOCATION RECORDS FOR [.debug_ranges]:
 
-// RELOC: RELOCATION RECORDS FOR [.rel.debug_aranges]:
+// RELOC: RELOCATION RECORDS FOR [.debug_aranges]:
+// RELOC-NEXT: OFFSET TYPE VALUE
 // RELOC-NEXT: 00000006 R_ARM_ABS32 .debug_info
 // RELOC-NEXT: 00000010 R_ARM_ABS32 foo

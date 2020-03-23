@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SymbolFileDWARF_NameToDIE_h_
-#define SymbolFileDWARF_NameToDIE_h_
+#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H
+#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H
 
 #include <functional>
 
@@ -16,7 +16,7 @@
 #include "lldb/Core/dwarf.h"
 #include "lldb/lldb-defines.h"
 
-class SymbolFileDWARF;
+class DWARFUnit;
 
 class NameToDIE {
 public:
@@ -38,8 +38,8 @@ public:
   size_t Find(const lldb_private::RegularExpression &regex,
               DIEArray &info_array) const;
 
-  size_t FindAllEntriesForCompileUnit(dw_offset_t cu_offset,
-                                      DIEArray &info_array) const;
+  size_t FindAllEntriesForUnit(const DWARFUnit &unit,
+                               DIEArray &info_array) const;
 
   void
   ForEach(std::function<bool(lldb_private::ConstString name,
@@ -50,4 +50,4 @@ protected:
   lldb_private::UniqueCStringMap<DIERef> m_map;
 };
 
-#endif // SymbolFileDWARF_NameToDIE_h_
+#endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_NAMETODIE_H

@@ -6,13 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_DynamicLoaderPOSIXDYLD_h_
-#define liblldb_DynamicLoaderPOSIXDYLD_h_
+#ifndef LLDB_SOURCE_PLUGINS_DYNAMICLOADER_POSIX_DYLD_DYNAMICLOADERPOSIXDYLD_H
+#define LLDB_SOURCE_PLUGINS_DYNAMICLOADER_POSIX_DYLD_DYNAMICLOADERPOSIXDYLD_H
 
 #include <map>
 #include <memory>
 
 #include "DYLDRendezvous.h"
+#include "Plugins/Process/Utility/AuxVector.h"
 #include "lldb/Breakpoint/StoppointCallbackContext.h"
 #include "lldb/Core/ModuleList.h"
 #include "lldb/Target/DynamicLoader.h"
@@ -36,9 +37,7 @@ public:
   static lldb_private::DynamicLoader *
   CreateInstance(lldb_private::Process *process, bool force);
 
-  //------------------------------------------------------------------
   // DynamicLoader protocol
-  //------------------------------------------------------------------
 
   void DidAttach() override;
 
@@ -53,9 +52,7 @@ public:
                                   const lldb::ThreadSP thread,
                                   lldb::addr_t tls_file_addr) override;
 
-  //------------------------------------------------------------------
   // PluginInterface protocol
-  //------------------------------------------------------------------
   lldb_private::ConstString GetPluginName() override;
 
   uint32_t GetPluginVersion() override;
@@ -165,4 +162,4 @@ private:
   DISALLOW_COPY_AND_ASSIGN(DynamicLoaderPOSIXDYLD);
 };
 
-#endif // liblldb_DynamicLoaderPOSIXDYLD_h_
+#endif // LLDB_SOURCE_PLUGINS_DYNAMICLOADER_POSIX_DYLD_DYNAMICLOADERPOSIXDYLD_H

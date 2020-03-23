@@ -24,7 +24,7 @@ namespace utils {
 class ExceptionAnalyzer {
 public:
   enum class State : std::int8_t {
-    Throwing = 0,    ///< The function can definitly throw given an AST.
+    Throwing = 0,    ///< The function can definitely throw given an AST.
     NotThrowing = 1, ///< This function can not throw, given an AST.
     Unknown = 2,     ///< This can happen for extern functions without available
                      ///< definition.
@@ -129,6 +129,7 @@ public:
   }
 
   ExceptionInfo analyze(const FunctionDecl *Func);
+  ExceptionInfo analyze(const Stmt *Stmt);
 
 private:
   ExceptionInfo
@@ -138,10 +139,16 @@ private:
   throwsException(const Stmt *St, const ExceptionInfo::Throwables &Caught,
                   llvm::SmallSet<const FunctionDecl *, 32> &CallStack);
 
+  ExceptionInfo analyzeImpl(const FunctionDecl *Func);
+  ExceptionInfo analyzeImpl(const Stmt *Stmt);
+
+  template <typename T> ExceptionInfo analyzeDispatch(const T *Node);
+
   bool IgnoreBadAlloc = true;
   llvm::StringSet<> IgnoredExceptions;
   std::map<const FunctionDecl *, ExceptionInfo> FunctionCache;
 };
+
 } // namespace utils
 } // namespace tidy
 } // namespace clang

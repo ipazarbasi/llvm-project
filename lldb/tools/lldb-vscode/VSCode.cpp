@@ -16,7 +16,7 @@
 
 #if defined(_WIN32)
 #define NOMINMAX
-#include <Windows.h>
+#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
 #endif
@@ -44,8 +44,11 @@ VSCode::VSCode()
 // Windows opens stdout and stdin in text mode which converts \n to 13,10
 // while the value is just 10 on Darwin/Linux. Setting the file mode to binary
 // fixes this.
-  assert(_setmode(fileno(stdout), _O_BINARY));
-  assert(_setmode(fileno(stdin), _O_BINARY));
+  int result = _setmode(fileno(stdout), _O_BINARY);
+  assert(result);
+  result = _setmode(fileno(stdin), _O_BINARY);
+  (void)result;
+  assert(result);
 #endif
   if (log_file_path)
     log.reset(new std::ofstream(log_file_path));
@@ -78,11 +81,9 @@ VSCode::GetExceptionBreakpoint(const lldb::break_id_t bp_id) {
   return nullptr;
 }
 
-//----------------------------------------------------------------------
 // Send the JSON in "json_str" to the "out" stream. Correctly send the
 // "Content-Length:" field followed by the length, followed by the raw
 // JSON bytes.
-//----------------------------------------------------------------------
 void VSCode::SendJSON(const std::string &json_str) {
   output.write_full("Content-Length: ");
   output.write_full(llvm::utostr(json_str.size()));
@@ -96,10 +97,8 @@ void VSCode::SendJSON(const std::string &json_str) {
   }
 }
 
-//----------------------------------------------------------------------
 // Serialize the JSON value into a string and send the JSON packet to
 // the "out" stream.
-//----------------------------------------------------------------------
 void VSCode::SendJSON(const llvm::json::Value &json) {
   std::string s;
   llvm::raw_string_ostream strm(s);
@@ -109,9 +108,7 @@ void VSCode::SendJSON(const llvm::json::Value &json) {
   SendJSON(strm.str());
 }
 
-//----------------------------------------------------------------------
 // Read a JSON packet from the "in" stream.
-//----------------------------------------------------------------------
 std::string VSCode::ReadJSON() {
   std::string length_str;
   std::string json_str;
@@ -132,10 +129,15 @@ std::string VSCode::ReadJSON() {
   if (!input.read_full(log.get(), length, json_str))
     return json_str;
 
+  if (log) {
+    *log << "--> " << std::endl
+         << "Content-Length: " << length << "\r\n\r\n"
+         << json_str << std::endl;
+  }
+
   return json_str;
 }
 
-//----------------------------------------------------------------------
 // "OutputEvent": {
 //   "allOf": [ { "$ref": "#/definitions/Event" }, {
 //     "type": "object",
@@ -196,7 +198,6 @@ std::string VSCode::ReadJSON() {
 //     "required": [ "event", "body" ]
 //   }]
 // }
-//----------------------------------------------------------------------
 void VSCode::SendOutput(OutputType o, const llvm::StringRef output) {
   if (output.empty())
     return;
@@ -308,5 +309,52 @@ void VSCode::RunExitCommands() {
   RunLLDBCommands("Running exitCommands:", exit_commands);
 }
 
-} // namespace lldb_vscode
+lldb::SBTarget VSCode::CreateTargetFromArguments(
+    const llvm::json::Object &arguments,
+    lldb::SBError &error) {
+  // Grab the name of the program we need to debug and create a target using
+  // the given program as an argument. Executable file can be a source of target
+  // architecture and platform, if they differ from the host. Setting exe path
+  // in launch info is useless because Target.Launch() will not change
+  // architecture and platform, therefore they should be known at the target
+  // creation. We also use target triple and platform from the launch
+  // configuration, if given, since in some cases ELF file doesn't contain
+  // enough information to determine correct arch and platform (or ELF can be
+  // omitted at all), so it is good to leave the user an apportunity to specify
+  // those. Any of those three can be left empty.
+  llvm::StringRef target_triple = GetString(arguments, "targetTriple");
+  llvm::StringRef platform_name = GetString(arguments, "platformName");
+  llvm::StringRef program = GetString(arguments, "program");
+  auto target = this->debugger.CreateTarget(
+    program.data(),
+    target_triple.data(),
+    platform_name.data(),
+    true, // Add dependent modules.
+    error
+  );
 
+  if (error.Fail()) {
+    // Update message if there was an error.
+    error.SetErrorStringWithFormat(
+        "Could not create a target for a program '%s': %s.",
+        program.data(), error.GetCString());
+  }
+
+  return target;
+}
+
+void VSCode::SetTarget(const lldb::SBTarget target) {
+  this->target = target;
+
+  if (target.IsValid()) {
+    // Configure breakpoint event listeners for the target.
+    lldb::SBListener listener = this->debugger.GetListener();
+    listener.StartListeningForEvents(
+        this->target.GetBroadcaster(),
+        lldb::SBTarget::eBroadcastBitBreakpointChanged);
+    listener.StartListeningForEvents(this->broadcaster,
+                                     eBroadcastBitStopEventThread);
+  }
+}
+
+} // namespace lldb_vscode

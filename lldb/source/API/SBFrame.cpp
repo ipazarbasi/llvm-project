@@ -1,4 +1,4 @@
-//===-- SBFrame.cpp ---------------------------------------------*- C++ -*-===//
+//===-- SBFrame.cpp -------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -14,13 +14,13 @@
 
 #include "lldb/lldb-types.h"
 
-#include "Plugins/ExpressionParser/Clang/ClangPersistentVariables.h"
 #include "SBReproducerPrivate.h"
 #include "Utils.h"
 #include "lldb/Core/Address.h"
 #include "lldb/Core/StreamFile.h"
 #include "lldb/Core/ValueObjectRegister.h"
 #include "lldb/Core/ValueObjectVariable.h"
+#include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Expression/UserExpression.h"
 #include "lldb/Host/Host.h"
 #include "lldb/Symbol/Block.h"
@@ -78,7 +78,7 @@ const SBFrame &SBFrame::operator=(const SBFrame &rhs) {
 
   if (this != &rhs)
     m_opaque_sp = clone(rhs.m_opaque_sp);
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
 StackFrameSP SBFrame::GetFrameSP() const {
@@ -831,14 +831,12 @@ SBValueList SBFrame::GetVariables(const lldb::SBVariablesOptions &options) {
     if (stop_locker.TryLock(&process->GetRunLock())) {
       frame = exe_ctx.GetFramePtr();
       if (frame) {
-        size_t i;
         VariableList *variable_list = nullptr;
         variable_list = frame->GetVariableList(true);
         if (variable_list) {
           const size_t num_variables = variable_list->GetSize();
           if (num_variables) {
-            for (i = 0; i < num_variables; ++i) {
-              VariableSP variable_sp(variable_list->GetVariableAtIndex(i));
+            for (const VariableSP &variable_sp : *variable_list) {
               if (variable_sp) {
                 bool add_variable = false;
                 switch (variable_sp->GetScope()) {
@@ -1080,11 +1078,8 @@ lldb::SBValue SBFrame::EvaluateExpression(const char *expr,
                      (const char *, const lldb::SBExpressionOptions &), expr,
                      options);
 
-#ifndef LLDB_DISABLE_PYTHON
   Log *expr_log(GetLogIfAllCategoriesSet(LIBLLDB_LOG_EXPRESSIONS));
-#endif
 
-  ExpressionResults exe_results = eExpressionSetupError;
   SBValue expr_result;
 
   if (expr == nullptr || expr[0] == '\0') {
@@ -1110,26 +1105,23 @@ lldb::SBValue SBFrame::EvaluateExpression(const char *expr,
         if (target->GetDisplayExpressionsInCrashlogs()) {
           StreamString frame_description;
           frame->DumpUsingSettingsFormat(&frame_description);
-          stack_trace = llvm::make_unique<llvm::PrettyStackTraceFormat>(
+          stack_trace = std::make_unique<llvm::PrettyStackTraceFormat>(
               "SBFrame::EvaluateExpression (expr = \"%s\", fetch_dynamic_value "
               "= %u) %s",
               expr, options.GetFetchDynamicValue(),
               frame_description.GetData());
         }
 
-        exe_results = target->EvaluateExpression(expr, frame, expr_value_sp,
-                                                 options.ref());
+        target->EvaluateExpression(expr, frame, expr_value_sp, options.ref());
         expr_result.SetSP(expr_value_sp, options.GetFetchDynamicValue());
       }
     }
   }
 
-#ifndef LLDB_DISABLE_PYTHON
-  if (expr_log)
-    expr_log->Printf("** [SBFrame::EvaluateExpression] Expression result is "
-                     "%s, summary %s **",
-                     expr_result.GetValue(), expr_result.GetSummary());
-#endif
+  LLDB_LOGF(expr_log,
+            "** [SBFrame::EvaluateExpression] Expression result is "
+            "%s, summary %s **",
+            expr_result.GetValue(), expr_result.GetSummary());
 
   return LLDB_RECORD_RESULT(expr_result);
 }
@@ -1233,8 +1225,7 @@ const char *SBFrame::GetFunctionName() const {
           if (inlined_block) {
             const InlineFunctionInfo *inlined_info =
                 inlined_block->GetInlinedFunctionInfo();
-            name =
-                inlined_info->GetName(sc.function->GetLanguage()).AsCString();
+            name = inlined_info->GetName().AsCString();
           }
         }
 
@@ -1277,8 +1268,7 @@ const char *SBFrame::GetDisplayFunctionName() {
           if (inlined_block) {
             const InlineFunctionInfo *inlined_info =
                 inlined_block->GetInlinedFunctionInfo();
-            name = inlined_info->GetDisplayName(sc.function->GetLanguage())
-                       .AsCString();
+            name = inlined_info->GetDisplayName().AsCString();
           }
         }
 
@@ -1295,4 +1285,83 @@ const char *SBFrame::GetDisplayFunctionName() {
     }
   }
   return name;
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBFrame>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBFrame, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBFrame, (const lldb::StackFrameSP &));
+  LLDB_REGISTER_CONSTRUCTOR(SBFrame, (const lldb::SBFrame &));
+  LLDB_REGISTER_METHOD(const lldb::SBFrame &,
+                       SBFrame, operator=,(const lldb::SBFrame &));
+  LLDB_REGISTER_METHOD_CONST(bool, SBFrame, IsValid, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBFrame, operator bool, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBSymbolContext, SBFrame, GetSymbolContext,
+                             (uint32_t));
+  LLDB_REGISTER_METHOD_CONST(lldb::SBModule, SBFrame, GetModule, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBCompileUnit, SBFrame, GetCompileUnit,
+                             ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBFunction, SBFrame, GetFunction, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBSymbol, SBFrame, GetSymbol, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBBlock, SBFrame, GetBlock, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBBlock, SBFrame, GetFrameBlock, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBLineEntry, SBFrame, GetLineEntry, ());
+  LLDB_REGISTER_METHOD_CONST(uint32_t, SBFrame, GetFrameID, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::addr_t, SBFrame, GetCFA, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::addr_t, SBFrame, GetPC, ());
+  LLDB_REGISTER_METHOD(bool, SBFrame, SetPC, (lldb::addr_t));
+  LLDB_REGISTER_METHOD_CONST(lldb::addr_t, SBFrame, GetSP, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::addr_t, SBFrame, GetFP, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::SBAddress, SBFrame, GetPCAddress, ());
+  LLDB_REGISTER_METHOD(void, SBFrame, Clear, ());
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, GetValueForVariablePath,
+                       (const char *));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, GetValueForVariablePath,
+                       (const char *, lldb::DynamicValueType));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, FindVariable, (const char *));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, FindVariable,
+                       (const char *, lldb::DynamicValueType));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, FindValue,
+                       (const char *, lldb::ValueType));
+  LLDB_REGISTER_METHOD(
+      lldb::SBValue, SBFrame, FindValue,
+      (const char *, lldb::ValueType, lldb::DynamicValueType));
+  LLDB_REGISTER_METHOD_CONST(bool, SBFrame, IsEqual, (const lldb::SBFrame &));
+  LLDB_REGISTER_METHOD_CONST(bool,
+                             SBFrame, operator==,(const lldb::SBFrame &));
+  LLDB_REGISTER_METHOD_CONST(bool,
+                             SBFrame, operator!=,(const lldb::SBFrame &));
+  LLDB_REGISTER_METHOD_CONST(lldb::SBThread, SBFrame, GetThread, ());
+  LLDB_REGISTER_METHOD_CONST(const char *, SBFrame, Disassemble, ());
+  LLDB_REGISTER_METHOD(lldb::SBValueList, SBFrame, GetVariables,
+                       (bool, bool, bool, bool));
+  LLDB_REGISTER_METHOD(lldb::SBValueList, SBFrame, GetVariables,
+                       (bool, bool, bool, bool, lldb::DynamicValueType));
+  LLDB_REGISTER_METHOD(lldb::SBValueList, SBFrame, GetVariables,
+                       (const lldb::SBVariablesOptions &));
+  LLDB_REGISTER_METHOD(lldb::SBValueList, SBFrame, GetRegisters, ());
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, FindRegister, (const char *));
+  LLDB_REGISTER_METHOD(bool, SBFrame, GetDescription, (lldb::SBStream &));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, EvaluateExpression,
+                       (const char *));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, EvaluateExpression,
+                       (const char *, lldb::DynamicValueType));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, EvaluateExpression,
+                       (const char *, lldb::DynamicValueType, bool));
+  LLDB_REGISTER_METHOD(lldb::SBValue, SBFrame, EvaluateExpression,
+                       (const char *, const lldb::SBExpressionOptions &));
+  LLDB_REGISTER_METHOD(bool, SBFrame, IsInlined, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBFrame, IsInlined, ());
+  LLDB_REGISTER_METHOD(bool, SBFrame, IsArtificial, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBFrame, IsArtificial, ());
+  LLDB_REGISTER_METHOD(const char *, SBFrame, GetFunctionName, ());
+  LLDB_REGISTER_METHOD_CONST(lldb::LanguageType, SBFrame, GuessLanguage, ());
+  LLDB_REGISTER_METHOD_CONST(const char *, SBFrame, GetFunctionName, ());
+  LLDB_REGISTER_METHOD(const char *, SBFrame, GetDisplayFunctionName, ());
+}
+
+}
 }

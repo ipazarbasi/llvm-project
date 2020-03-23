@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef lldb_UniqueDWARFASTType_h_
-#define lldb_UniqueDWARFASTType_h_
+#ifndef LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_UNIQUEDWARFASTTYPE_H
+#define LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_UNIQUEDWARFASTTYPE_H
 
 #include <vector>
 
@@ -18,9 +18,7 @@
 
 class UniqueDWARFASTType {
 public:
-  //------------------------------------------------------------------
   // Constructors and Destructors
-  //------------------------------------------------------------------
   UniqueDWARFASTType()
       : m_type_sp(), m_die(), m_declaration(),
         m_byte_size(
@@ -102,4 +100,4 @@ protected:
   collection m_collection;
 };
 
-#endif // lldb_UniqueDWARFASTType_h_
+#endif // LLDB_SOURCE_PLUGINS_SYMBOLFILE_DWARF_UNIQUEDWARFASTTYPE_H

@@ -1,4 +1,4 @@
-//===-- CPlusPlusNameParser.cpp ---------------------------------*- C++ -*-===//
+//===-- CPlusPlusNameParser.cpp -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -640,6 +640,8 @@ static const llvm::StringMap<tok::TokenKind> &GetKeywordsMap() {
 }
 
 void CPlusPlusNameParser::ExtractTokens() {
+  if (m_text.empty())
+    return;
   clang::Lexer lexer(clang::SourceLocation(), GetLangOptions(), m_text.data(),
                      m_text.data(), m_text.data() + m_text.size());
   const auto &kw_map = GetKeywordsMap();

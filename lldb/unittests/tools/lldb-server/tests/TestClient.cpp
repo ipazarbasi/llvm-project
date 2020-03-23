@@ -1,4 +1,4 @@
-//===-- TestClient.cpp ------------------------------------------*- C++ -*-===//
+//===-- TestClient.cpp ----------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -24,6 +24,10 @@ using namespace lldb;
 using namespace lldb_private;
 using namespace llvm;
 using namespace llgs_tests;
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
 
 TestClient::TestClient(std::unique_ptr<Connection> Conn) {
   SetConnection(Conn.release());
@@ -107,7 +111,7 @@ Expected<std::unique_ptr<TestClient>> TestClient::launchCustom(StringRef Log, Ar
 
   Socket *accept_socket;
   listen_socket.Accept(accept_socket);
-  auto Conn = llvm::make_unique<ConnectionFileDescriptor>(accept_socket);
+  auto Conn = std::make_unique<ConnectionFileDescriptor>(accept_socket);
   auto Client = std::unique_ptr<TestClient>(new TestClient(std::move(Conn)));
 
   if (Error E = Client->initializeConnection())

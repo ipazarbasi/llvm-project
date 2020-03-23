@@ -8,6 +8,7 @@
 //
 // UNSUPPORTED: libcpp-has-no-threads
 // UNSUPPORTED: c++98, c++03
+// FLAKY_TEST.
 
 // <future>
 
@@ -20,6 +21,8 @@
 #include <future>
 #include <atomic>
 #include <cassert>
+
+#include "test_macros.h"
 
 enum class WorkerThreadState { Uninitialized, AllowedToRun, Exiting };
 typedef std::chrono::milliseconds ms;

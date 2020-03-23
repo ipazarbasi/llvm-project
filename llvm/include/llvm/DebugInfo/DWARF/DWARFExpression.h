@@ -77,16 +77,17 @@ public:
     uint8_t Opcode; ///< The Op Opcode, DW_OP_<something>.
     Description Desc;
     bool Error;
-    uint32_t EndOffset;
+    uint64_t EndOffset;
     uint64_t Operands[2];
+    uint64_t OperandEndOffsets[2];
 
   public:
     Description &getDescription() { return Desc; }
     uint8_t getCode() { return Opcode; }
     uint64_t getRawOperand(unsigned Idx) { return Operands[Idx]; }
-    uint32_t getEndOffset() { return EndOffset; }
-    bool extract(DataExtractor Data, uint16_t Version, uint8_t AddressSize,
-                 uint32_t Offset);
+    uint64_t getOperandEndOffset(unsigned Idx) { return OperandEndOffsets[Idx]; }
+    uint64_t getEndOffset() { return EndOffset; }
+    bool extract(DataExtractor Data, uint8_t AddressSize, uint64_t Offset);
     bool isError() { return Error; }
     bool print(raw_ostream &OS, const DWARFExpression *Expr,
                const MCRegisterInfo *RegInfo, DWARFUnit *U, bool isEH);
@@ -99,13 +100,13 @@ public:
                                     Operation> {
     friend class DWARFExpression;
     const DWARFExpression *Expr;
-    uint32_t Offset;
+    uint64_t Offset;
     Operation Op;
-    iterator(const DWARFExpression *Expr, uint32_t Offset)
+    iterator(const DWARFExpression *Expr, uint64_t Offset)
         : Expr(Expr), Offset(Offset) {
       Op.Error =
           Offset >= Expr->Data.getData().size() ||
-          !Op.extract(Expr->Data, Expr->Version, Expr->AddressSize, Offset);
+          !Op.extract(Expr->Data, Expr->AddressSize, Offset);
     }
 
   public:
@@ -113,7 +114,7 @@ public:
       Offset = Op.isError() ? Expr->Data.getData().size() : Op.EndOffset;
       Op.Error =
           Offset >= Expr->Data.getData().size() ||
-          !Op.extract(Expr->Data, Expr->Version, Expr->AddressSize, Offset);
+          !Op.extract(Expr->Data, Expr->AddressSize, Offset);
       return Op;
     }
 
@@ -125,9 +126,9 @@ public:
     friend bool operator==(const iterator &, const iterator &);
   };
 
-  DWARFExpression(DataExtractor Data, uint16_t Version, uint8_t AddressSize)
-      : Data(Data), Version(Version), AddressSize(AddressSize) {
-    assert(AddressSize == 8 || AddressSize == 4);
+  DWARFExpression(DataExtractor Data, uint8_t AddressSize)
+      : Data(Data), AddressSize(AddressSize) {
+    assert(AddressSize == 8 || AddressSize == 4 || AddressSize == 2);
   }
 
   iterator begin() const { return iterator(this, 0); }
@@ -140,7 +141,6 @@ public:
 
 private:
   DataExtractor Data;
-  uint16_t Version;
   uint8_t AddressSize;
 };
 

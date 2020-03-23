@@ -12,9 +12,11 @@ static_library("objc") {
   ]
   sources = [
     "AvoidNSErrorInitCheck.cpp",
-    "AvoidSpinlockCheck.cpp",
+    "DeallocInCategoryCheck.cpp",
     "ForbiddenSubclassingCheck.cpp",
+    "MissingHashCheck.cpp",
     "ObjCTidyModule.cpp",
     "PropertyDeclarationCheck.cpp",
+    "SuperSelfCheck.cpp",
   ]
 }

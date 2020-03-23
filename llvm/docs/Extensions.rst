@@ -213,7 +213,7 @@ ELF-Dependent
 ^^^^^^^^^^^^^^^^^^^^^^
 
 In order to support creating multiple sections with the same name and comdat,
-it is possible to add an unique number at the end of the ``.seciton`` directive.
+it is possible to add an unique number at the end of the ``.section`` directive.
 For example, the following code creates two sections named ``.text``.
 
 .. code-block:: gas
@@ -284,6 +284,26 @@ The following directives are specified:
 
     The paramter identifies an additional library search path to be considered
     when looking up libraries after the inclusion of this option.
+
+``SHT_LLVM_DEPENDENT_LIBRARIES`` Section (Dependent Libraries)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This section contains strings specifying libraries to be added to the link by
+the linker.
+
+The section should be consumed by the linker and not written to the output.
+
+The strings are encoded as standard null-terminated UTF-8 strings.
+
+For example:
+
+.. code-block:: gas
+
+  .section ".deplibs","MS",@llvm_dependent_libraries,1
+  .asciz "library specifier 1"
+  .asciz "library specifier 2"
+
+The interpretation of the library specifiers is defined by the consuming linker.
 
 ``SHT_LLVM_CALL_GRAPH_PROFILE`` Section (Call Graph Profile)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -358,6 +378,22 @@ this directive, all symbols are considered address-significant.
   .addrsig_sym sym
 
 This marks ``sym`` as address-significant.
+
+``SHT_LLVM_SYMPART`` Section (symbol partition specification)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This section is used to mark symbols with the `partition`_ that they
+belong to. An ``.llvm_sympart`` section consists of a null-terminated string
+specifying the name of the partition followed by a relocation referring to
+the symbol that belongs to the partition. It may be constructed as follows:
+
+.. code-block:: gas
+
+  .section ".llvm_sympart","",@llvm_sympart
+  .asciz "libpartition.so"
+  .word symbol_in_partition
+
+.. _partition: https://lld.llvm.org/Partitions.html
 
 CodeView-Dependent
 ------------------
@@ -467,7 +503,7 @@ in the following fashion:
   sub.w sp, sp, r4
 
 However, this has the limitation of 32 MiB (±16MiB).  In order to accommodate
-larger binaries, LLVM supports the use of ``-mcode-model=large`` to allow a 4GiB
+larger binaries, LLVM supports the use of ``-mcmodel=large`` to allow a 4GiB
 range via a slight deviation.  It will generate an indirect jump as follows:
 
 .. code-block:: gas
@@ -508,7 +544,7 @@ in the following fashion:
   sub sp, sp, x15, lsl #4
 
 However, this has the limitation of 256 MiB (±128MiB).  In order to accommodate
-larger binaries, LLVM supports the use of ``-mcode-model=large`` to allow a 8GiB
+larger binaries, LLVM supports the use of ``-mcmodel=large`` to allow a 8GiB
 (±4GiB) range via a slight deviation.  It will generate an indirect jump as
 follows:
 

@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ValueObjectConstResultCast_h_
-#define liblldb_ValueObjectConstResultCast_h_
+#ifndef LLDB_CORE_VALUEOBJECTCONSTRESULTCAST_H
+#define LLDB_CORE_VALUEOBJECTCONSTRESULTCAST_H
 
 #include "lldb/Core/ValueObjectCast.h"
 #include "lldb/Core/ValueObjectConstResultImpl.h"
@@ -22,15 +22,8 @@
 
 namespace lldb_private {
 class DataExtractor;
-}
-namespace lldb_private {
 class Status;
-}
-namespace lldb_private {
 class ValueObject;
-}
-
-namespace lldb_private {
 
 class ValueObjectConstResultCast : public ValueObjectCast {
 public:
@@ -73,4 +66,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_ValueObjectConstResultCast_h_
+#endif // LLDB_CORE_VALUEOBJECTCONSTRESULTCAST_H

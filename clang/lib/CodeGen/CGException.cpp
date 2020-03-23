@@ -10,10 +10,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "CodeGenFunction.h"
 #include "CGCXXABI.h"
 #include "CGCleanup.h"
 #include "CGObjCRuntime.h"
+#include "CodeGenFunction.h"
 #include "ConstantEmitter.h"
 #include "TargetInfo.h"
 #include "clang/AST/Mangle.h"
@@ -21,8 +21,9 @@
 #include "clang/AST/StmtObjC.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/TargetBuiltins.h"
-#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsWebAssembly.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace clang;
@@ -32,7 +33,7 @@ static llvm::FunctionCallee getFreeExceptionFn(CodeGenModule &CGM) {
   // void __cxa_free_exception(void *thrown_exception);
 
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*IsVarArgs=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*isVarArg=*/false);
 
   return CGM.CreateRuntimeFunction(FTy, "__cxa_free_exception");
 }
@@ -41,7 +42,7 @@ static llvm::FunctionCallee getUnexpectedFn(CodeGenModule &CGM) {
   // void __cxa_call_unexpected(void *thrown_exception);
 
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*IsVarArgs=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*isVarArg=*/false);
 
   return CGM.CreateRuntimeFunction(FTy, "__cxa_call_unexpected");
 }
@@ -50,7 +51,7 @@ llvm::FunctionCallee CodeGenModule::getTerminateFn() {
   // void __terminate();
 
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(VoidTy, /*IsVarArgs=*/false);
+    llvm::FunctionType::get(VoidTy, /*isVarArg=*/false);
 
   StringRef name;
 
@@ -75,7 +76,7 @@ llvm::FunctionCallee CodeGenModule::getTerminateFn() {
 static llvm::FunctionCallee getCatchallRethrowFn(CodeGenModule &CGM,
                                                  StringRef Name) {
   llvm::FunctionType *FTy =
-    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*IsVarArgs=*/false);
+    llvm::FunctionType::get(CGM.VoidTy, CGM.Int8PtrTy, /*isVarArg=*/false);
 
   return CGM.CreateRuntimeFunction(FTy, Name);
 }
@@ -165,10 +166,7 @@ static const EHPersonality &getCXXPersonality(const TargetInfo &Target,
     return EHPersonality::GNU_CPlusPlus;
   if (L.SEHExceptions)
     return EHPersonality::GNU_CPlusPlus_SEH;
-  // Wasm EH is a non-MVP feature for now.
-  if (Target.hasFeature("exception-handling") &&
-      (T.getArch() == llvm::Triple::wasm32 ||
-       T.getArch() == llvm::Triple::wasm64))
+  if (L.WasmExceptions)
     return EHPersonality::GNU_Wasm_CPlusPlus;
   return EHPersonality::GNU_CPlusPlus;
 }
@@ -705,12 +703,12 @@ llvm::BasicBlock *CodeGenFunction::getInvokeDestImpl() {
   assert(EHStack.requiresLandingPad());
   assert(!EHStack.empty());
 
-  // If exceptions are disabled and SEH is not in use, then there is no invoke
-  // destination. SEH "works" even if exceptions are off. In practice, this
-  // means that C++ destructors and other EH cleanups don't run, which is
+  // If exceptions are disabled/ignored and SEH is not in use, then there is no
+  // invoke destination. SEH "works" even if exceptions are off. In practice,
+  // this means that C++ destructors and other EH cleanups don't run, which is
   // consistent with MSVC's behavior.
   const LangOptions &LO = CGM.getLangOpts();
-  if (!LO.Exceptions) {
+  if (!LO.Exceptions || LO.IgnoreExceptions) {
     if (!LO.Borland && !LO.MicrosoftExt)
       return nullptr;
     if (!currentFunctionUsesSEHTry())
@@ -753,7 +751,9 @@ llvm::BasicBlock *CodeGenFunction::getInvokeDestImpl() {
 
 llvm::BasicBlock *CodeGenFunction::EmitLandingPad() {
   assert(EHStack.requiresLandingPad());
-
+  assert(!CGM.getLangOpts().IgnoreExceptions &&
+         "LandingPad should not be emitted when -fignore-exceptions are in "
+         "effect.");
   EHScope &innermostEHScope = *EHStack.find(EHStack.getInnermostEHScope());
   switch (innermostEHScope.getKind()) {
   case EHScope::Terminate:
@@ -1259,7 +1259,9 @@ void CodeGenFunction::ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock) {
     }
     assert(RethrowBlock != WasmCatchStartBlock && RethrowBlock->empty());
     Builder.SetInsertPoint(RethrowBlock);
-    CGM.getCXXABI().emitRethrow(*this, /*isNoReturn=*/true);
+    llvm::Function *RethrowInCatchFn =
+        CGM.getIntrinsic(llvm::Intrinsic::wasm_rethrow_in_catch);
+    EmitNoreturnRuntimeCallOrInvoke(RethrowInCatchFn, {});
   }
 
   EmitBlock(ContBB);
@@ -1772,7 +1774,8 @@ void CodeGenFunction::EmitCapturedLocals(CodeGenFunction &ParentCGF,
     // EH registration is passed in as the EBP physical register.  We can
     // recover that with llvm.frameaddress(1).
     EntryFP = Builder.CreateCall(
-        CGM.getIntrinsic(llvm::Intrinsic::frameaddress), {Builder.getInt32(1)});
+        CGM.getIntrinsic(llvm::Intrinsic::frameaddress, AllocaInt8PtrTy),
+        {Builder.getInt32(1)});
   } else {
     // Otherwise, for x64 and 32-bit finally functions, the parent FP is the
     // second parameter.
@@ -1884,7 +1887,7 @@ void CodeGenFunction::startOutlinedSEHHelper(CodeGenFunction &ParentCGF,
                 OutlinedStmt->getBeginLoc(), OutlinedStmt->getBeginLoc());
   CurSEHParent = ParentCGF.CurSEHParent;
 
-  CGM.SetLLVMFunctionAttributes(GlobalDecl(), FnInfo, CurFn);
+  CGM.SetInternalFunctionAttributes(GlobalDecl(), CurFn, FnInfo);
   EmitCapturedLocals(ParentCGF, OutlinedStmt, IsFilter);
 }
 

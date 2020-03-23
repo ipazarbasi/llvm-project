@@ -1,5 +1,4 @@
-//===-- DataVisualization.cpp ---------------------------------------*- C++
-//-*-===//
+//===-- DataVisualization.cpp ---------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -50,35 +49,20 @@ DataVisualization::GetSummaryForType(lldb::TypeNameSpecifierImplSP type_sp) {
   return GetFormatManager().GetSummaryForType(type_sp);
 }
 
-#ifndef LLDB_DISABLE_PYTHON
 lldb::SyntheticChildrenSP
 DataVisualization::GetSyntheticChildren(ValueObject &valobj,
                                         lldb::DynamicValueType use_dynamic) {
   return GetFormatManager().GetSyntheticChildren(valobj, use_dynamic);
 }
-#endif
 
 lldb::TypeFilterImplSP
 DataVisualization::GetFilterForType(lldb::TypeNameSpecifierImplSP type_sp) {
   return GetFormatManager().GetFilterForType(type_sp);
 }
 
-#ifndef LLDB_DISABLE_PYTHON
 lldb::ScriptedSyntheticChildrenSP
 DataVisualization::GetSyntheticForType(lldb::TypeNameSpecifierImplSP type_sp) {
   return GetFormatManager().GetSyntheticForType(type_sp);
-}
-#endif
-
-lldb::TypeValidatorImplSP
-DataVisualization::GetValidator(ValueObject &valobj,
-                                lldb::DynamicValueType use_dynamic) {
-  return GetFormatManager().GetValidator(valobj, use_dynamic);
-}
-
-lldb::TypeValidatorImplSP
-DataVisualization::GetValidatorForType(lldb::TypeNameSpecifierImplSP type_sp) {
-  return GetFormatManager().GetValidatorForType(type_sp);
 }
 
 bool DataVisualization::AnyMatches(
@@ -93,7 +77,7 @@ bool DataVisualization::Categories::GetCategory(ConstString category,
                                                 lldb::TypeCategoryImplSP &entry,
                                                 bool allow_create) {
   entry = GetFormatManager().GetCategory(category, allow_create);
-  return (entry.get() != NULL);
+  return (entry.get() != nullptr);
 }
 
 bool DataVisualization::Categories::GetCategory(
@@ -126,8 +110,7 @@ void DataVisualization::Categories::Enable(ConstString category,
                                            TypeCategoryMap::Position pos) {
   if (GetFormatManager().GetCategory(category)->IsEnabled())
     GetFormatManager().DisableCategory(category);
-  GetFormatManager().EnableCategory(
-      category, pos, std::initializer_list<lldb::LanguageType>());
+  GetFormatManager().EnableCategory(category, pos, {});
 }
 
 void DataVisualization::Categories::Enable(lldb::LanguageType lang_type) {

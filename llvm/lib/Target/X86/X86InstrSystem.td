@@ -14,10 +14,10 @@
 
 let SchedRW = [WriteSystem] in {
 let Defs = [RAX, RDX] in
-  def RDTSC : I<0x31, RawFrm, (outs), (ins), "rdtsc", [(X86rdtsc)]>, TB;
+def RDTSC : I<0x31, RawFrm, (outs), (ins), "rdtsc", []>, TB;
 
 let Defs = [RAX, RCX, RDX] in
-  def RDTSCP : I<0x01, MRM_F9, (outs), (ins), "rdtscp", [(X86rdtscp)]>, TB;
+def RDTSCP : I<0x01, MRM_F9, (outs), (ins), "rdtscp", []>, TB;
 
 // CPU flow control instructions
 
@@ -43,7 +43,7 @@ def INT3 : I<0xcc, RawFrm, (outs), (ins), "int3", [(int_x86_int (i8 3))]>;
 let SchedRW = [WriteSystem] in {
 
 def INT : Ii8<0xcd, RawFrm, (outs), (ins u8imm:$trap), "int\t$trap",
-              [(int_x86_int imm:$trap)]>;
+              [(int_x86_int timm:$trap)]>;
 
 
 def SYSCALL  : I<0x05, RawFrm, (outs), (ins), "syscall", []>, TB;
@@ -149,12 +149,12 @@ def MOV64cr : I<0x22, MRMSrcReg, (outs CONTROL_REG:$dst), (ins GR64:$src),
 // Segment override instruction prefixes
 
 let SchedRW = [WriteNop] in {
-def CS_PREFIX : I<0x2E, RawFrm, (outs), (ins), "cs", []>;
-def SS_PREFIX : I<0x36, RawFrm, (outs), (ins), "ss", []>;
-def DS_PREFIX : I<0x3E, RawFrm, (outs), (ins), "ds", []>;
-def ES_PREFIX : I<0x26, RawFrm, (outs), (ins), "es", []>;
-def FS_PREFIX : I<0x64, RawFrm, (outs), (ins), "fs", []>;
-def GS_PREFIX : I<0x65, RawFrm, (outs), (ins), "gs", []>;
+def CS_PREFIX : I<0x2E, PrefixByte, (outs), (ins), "cs", []>;
+def SS_PREFIX : I<0x36, PrefixByte, (outs), (ins), "ss", []>;
+def DS_PREFIX : I<0x3E, PrefixByte, (outs), (ins), "ds", []>;
+def ES_PREFIX : I<0x26, PrefixByte, (outs), (ins), "es", []>;
+def FS_PREFIX : I<0x64, PrefixByte, (outs), (ins), "fs", []>;
+def GS_PREFIX : I<0x65, PrefixByte, (outs), (ins), "gs", []>;
 } // SchedRW
 
 //===----------------------------------------------------------------------===//
@@ -410,7 +410,7 @@ let Defs = [EAX, EDX], Uses = [ECX] in
 def RDMSR : I<0x32, RawFrm, (outs), (ins), "rdmsr", []>, TB;
 
 let Defs = [RAX, RDX], Uses = [ECX] in
-  def RDPMC : I<0x33, RawFrm, (outs), (ins), "rdpmc", [(X86rdpmc)]>, TB;
+def RDPMC : I<0x33, RawFrm, (outs), (ins), "rdpmc", []>, TB;
 
 def SMSW16r : I<0x01, MRM4r, (outs GR16:$dst), (ins),
                 "smsw{w}\t$dst", []>, OpSize16, TB;
@@ -587,18 +587,13 @@ let Defs = [RAX, RDX, RSI], Uses = [RAX, RSI] in
 
 //==-----------------------------------------------------------------------===//
 // PKU  - enable protection key
-let usesCustomInserter = 1, hasNoSchedulingInfo = 1 in {
-  def WRPKRU : PseudoI<(outs), (ins GR32:$src),
-                [(int_x86_wrpkru GR32:$src)]>;
-  def RDPKRU : PseudoI<(outs GR32:$dst), (ins),
-                [(set GR32:$dst, (int_x86_rdpkru))]>;
-}
-
 let SchedRW = [WriteSystem] in {
 let Defs = [EAX, EDX], Uses = [ECX] in
-  def RDPKRUr : I<0x01, MRM_EE, (outs), (ins), "rdpkru", []>, TB;
+  def RDPKRUr : I<0x01, MRM_EE, (outs), (ins), "rdpkru",
+                  [(set EAX, (X86rdpkru ECX)), (implicit EDX)]>, TB;
 let Uses = [EAX, ECX, EDX] in
-  def WRPKRUr : I<0x01, MRM_EF, (outs), (ins), "wrpkru", []>, TB;
+  def WRPKRUr : I<0x01, MRM_EF, (outs), (ins), "wrpkru",
+                  [(X86wrpkru EAX, EDX, ECX)]>, TB;
 } // SchedRW
 
 //===----------------------------------------------------------------------===//

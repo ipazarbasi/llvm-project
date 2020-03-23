@@ -1,5 +1,4 @@
-//===-- TestArm64InstEmulation.cpp ------------------------------------*- C++
-//-*-===//
+//===-- TestArm64InstEmulation.cpp ----------------------------------------===//
 
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -20,7 +19,7 @@
 #include "lldb/Target/UnwindAssembly.h"
 #include "lldb/Utility/ArchSpec.h"
 
-#include "Plugins/Disassembler/llvm/DisassemblerLLVMC.h"
+#include "Plugins/Disassembler/LLVMC/DisassemblerLLVMC.h"
 #include "Plugins/Instruction/ARM64/EmulateInstructionARM64.h"
 #include "Plugins/Process/Utility/lldb-arm64-register-enums.h"
 #include "llvm/Support/TargetSelect.h"
@@ -648,24 +647,34 @@ TEST_F(TestArm64InstEmulation, TestRegisterDoubleSpills) {
   EXPECT_TRUE(row_sp->GetCFAValue().IsRegisterPlusOffset() == true);
   EXPECT_EQ(0, row_sp->GetCFAValue().GetOffset());
 
-  if (row_sp->GetRegisterInfo(fpu_d8_arm64, regloc))
+  if (row_sp->GetRegisterInfo(fpu_d8_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d9_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d9_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d10_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d10_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d11_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d11_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d12_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d12_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d13_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d13_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d14_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d14_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(fpu_d15_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(fpu_d15_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(gpr_x27_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(gpr_x27_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
-  if (row_sp->GetRegisterInfo(gpr_x28_arm64, regloc))
+  }
+  if (row_sp->GetRegisterInfo(gpr_x28_arm64, regloc)) {
     EXPECT_TRUE(regloc.IsSame());
+  }
 }

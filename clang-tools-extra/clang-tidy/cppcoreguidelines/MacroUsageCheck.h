@@ -29,8 +29,12 @@ public:
         AllowedRegexp(Options.get("AllowedRegexp", "^DEBUG_*")),
         CheckCapsOnly(Options.get("CheckCapsOnly", 0)),
         IgnoreCommandLineMacros(Options.get("IgnoreCommandLineMacros", 1)) {}
+  bool isLanguageVersionSupported(const LangOptions &LangOpts) const override {
+    return LangOpts.CPlusPlus11;
+  }
   void storeOptions(ClangTidyOptions::OptionMap &Opts) override;
-  void registerPPCallbacks(CompilerInstance &Compiler) override;
+  void registerPPCallbacks(const SourceManager &SM, Preprocessor *PP,
+                           Preprocessor *ModuleExpanderPP) override;
   void warnMacro(const MacroDirective *MD, StringRef MacroName);
   void warnNaming(const MacroDirective *MD, StringRef MacroName);
 

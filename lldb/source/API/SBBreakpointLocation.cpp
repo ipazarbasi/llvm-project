@@ -1,4 +1,4 @@
-//===-- SBBreakpointLocation.cpp --------------------------------*- C++ -*-===//
+//===-- SBBreakpointLocation.cpp ------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -12,12 +12,14 @@
 #include "lldb/API/SBDebugger.h"
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBStream.h"
+#include "lldb/API/SBStructuredData.h"
 #include "lldb/API/SBStringList.h"
 
 #include "lldb/Breakpoint/Breakpoint.h"
 #include "lldb/Breakpoint/BreakpointLocation.h"
 #include "lldb/Core/Debugger.h"
 #include "lldb/Core/StreamFile.h"
+#include "lldb/Core/StructuredDataImpl.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/ScriptInterpreter.h"
 #include "lldb/Target/Target.h"
@@ -54,10 +56,10 @@ operator=(const SBBreakpointLocation &rhs) {
       rhs);
 
   m_opaque_wp = rhs.m_opaque_wp;
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
-SBBreakpointLocation::~SBBreakpointLocation() {}
+SBBreakpointLocation::~SBBreakpointLocation() = default;
 
 BreakpointLocationSP SBBreakpointLocation::GetSP() const {
   return m_opaque_wp.lock();
@@ -179,7 +181,7 @@ const char *SBBreakpointLocation::GetCondition() {
         loc_sp->GetTarget().GetAPIMutex());
     return loc_sp->GetConditionText();
   }
-  return NULL;
+  return nullptr;
 }
 
 void SBBreakpointLocation::SetAutoContinue(bool auto_continue) {
@@ -207,24 +209,38 @@ bool SBBreakpointLocation::GetAutoContinue() {
 }
 
 void SBBreakpointLocation::SetScriptCallbackFunction(
-    const char *callback_function_name) {
-  LLDB_RECORD_METHOD(void, SBBreakpointLocation, SetScriptCallbackFunction,
-                     (const char *), callback_function_name);
+  const char *callback_function_name) {
+LLDB_RECORD_METHOD(void, SBBreakpointLocation, SetScriptCallbackFunction,
+                   (const char *), callback_function_name);
+}
 
+SBError SBBreakpointLocation::SetScriptCallbackFunction(
+    const char *callback_function_name,
+    SBStructuredData &extra_args) {
+  LLDB_RECORD_METHOD(SBError, SBBreakpointLocation, SetScriptCallbackFunction,
+                     (const char *, SBStructuredData &), 
+                     callback_function_name, extra_args);
+  SBError sb_error;
   BreakpointLocationSP loc_sp = GetSP();
 
   if (loc_sp) {
+    Status error;
     std::lock_guard<std::recursive_mutex> guard(
         loc_sp->GetTarget().GetAPIMutex());
     BreakpointOptions *bp_options = loc_sp->GetLocationOptions();
-    loc_sp->GetBreakpoint()
+    error = loc_sp->GetBreakpoint()
         .GetTarget()
         .GetDebugger()
-        .GetCommandInterpreter()
         .GetScriptInterpreter()
         ->SetBreakpointCommandCallbackFunction(bp_options,
-                                               callback_function_name);
-  }
+                                               callback_function_name,
+                                               extra_args.m_impl_up
+                                                   ->GetObjectSP());
+      sb_error.SetError(error);
+    } else
+      sb_error.SetErrorString("invalid breakpoint");
+    
+    return LLDB_RECORD_RESULT(sb_error);
 }
 
 SBError
@@ -243,7 +259,6 @@ SBBreakpointLocation::SetScriptCallbackBody(const char *callback_body_text) {
         loc_sp->GetBreakpoint()
             .GetTarget()
             .GetDebugger()
-            .GetCommandInterpreter()
             .GetScriptInterpreter()
             ->SetBreakpointCommandCallback(bp_options, callback_body_text);
     sb_error.SetError(error);
@@ -359,7 +374,7 @@ const char *SBBreakpointLocation::GetThreadName() const {
         loc_sp->GetTarget().GetAPIMutex());
     return loc_sp->GetThreadName();
   }
-  return NULL;
+  return nullptr;
 }
 
 void SBBreakpointLocation::SetQueueName(const char *queue_name) {
@@ -384,7 +399,7 @@ const char *SBBreakpointLocation::GetQueueName() const {
         loc_sp->GetTarget().GetAPIMutex());
     loc_sp->GetQueueName();
   }
-  return NULL;
+  return nullptr;
 }
 
 bool SBBreakpointLocation::IsResolved() {
@@ -451,4 +466,69 @@ SBBreakpoint SBBreakpointLocation::GetBreakpoint() {
   }
 
   return LLDB_RECORD_RESULT(sb_bp);
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBBreakpointLocation>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBBreakpointLocation, ());
+  LLDB_REGISTER_CONSTRUCTOR(SBBreakpointLocation,
+                            (const lldb::BreakpointLocationSP &));
+  LLDB_REGISTER_CONSTRUCTOR(SBBreakpointLocation,
+                            (const lldb::SBBreakpointLocation &));
+  LLDB_REGISTER_METHOD(
+      const lldb::SBBreakpointLocation &,
+      SBBreakpointLocation, operator=,(const lldb::SBBreakpointLocation &));
+  LLDB_REGISTER_METHOD_CONST(bool, SBBreakpointLocation, IsValid, ());
+  LLDB_REGISTER_METHOD_CONST(bool, SBBreakpointLocation, operator bool, ());
+  LLDB_REGISTER_METHOD(lldb::SBAddress, SBBreakpointLocation, GetAddress, ());
+  LLDB_REGISTER_METHOD(lldb::addr_t, SBBreakpointLocation, GetLoadAddress,
+                       ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetEnabled, (bool));
+  LLDB_REGISTER_METHOD(bool, SBBreakpointLocation, IsEnabled, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBBreakpointLocation, GetHitCount, ());
+  LLDB_REGISTER_METHOD(uint32_t, SBBreakpointLocation, GetIgnoreCount, ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetIgnoreCount,
+                       (uint32_t));
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetCondition,
+                       (const char *));
+  LLDB_REGISTER_METHOD(const char *, SBBreakpointLocation, GetCondition, ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetAutoContinue, (bool));
+  LLDB_REGISTER_METHOD(bool, SBBreakpointLocation, GetAutoContinue, ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetScriptCallbackFunction,
+                       (const char *));
+  LLDB_REGISTER_METHOD(SBError, SBBreakpointLocation, SetScriptCallbackFunction,
+                       (const char *, SBStructuredData &));
+  LLDB_REGISTER_METHOD(lldb::SBError, SBBreakpointLocation,
+                       SetScriptCallbackBody, (const char *));
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetCommandLineCommands,
+                       (lldb::SBStringList &));
+  LLDB_REGISTER_METHOD(bool, SBBreakpointLocation, GetCommandLineCommands,
+                       (lldb::SBStringList &));
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetThreadID,
+                       (lldb::tid_t));
+  LLDB_REGISTER_METHOD(lldb::tid_t, SBBreakpointLocation, GetThreadID, ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetThreadIndex,
+                       (uint32_t));
+  LLDB_REGISTER_METHOD_CONST(uint32_t, SBBreakpointLocation, GetThreadIndex,
+                             ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetThreadName,
+                       (const char *));
+  LLDB_REGISTER_METHOD_CONST(const char *, SBBreakpointLocation,
+                             GetThreadName, ());
+  LLDB_REGISTER_METHOD(void, SBBreakpointLocation, SetQueueName,
+                       (const char *));
+  LLDB_REGISTER_METHOD_CONST(const char *, SBBreakpointLocation, GetQueueName,
+                             ());
+  LLDB_REGISTER_METHOD(bool, SBBreakpointLocation, IsResolved, ());
+  LLDB_REGISTER_METHOD(bool, SBBreakpointLocation, GetDescription,
+                       (lldb::SBStream &, lldb::DescriptionLevel));
+  LLDB_REGISTER_METHOD(lldb::break_id_t, SBBreakpointLocation, GetID, ());
+  LLDB_REGISTER_METHOD(lldb::SBBreakpoint, SBBreakpointLocation,
+                       GetBreakpoint, ());
+}
+
+}
 }

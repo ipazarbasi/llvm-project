@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_OptionValueDictionary_h_
-#define liblldb_OptionValueDictionary_h_
+#ifndef LLDB_INTERPRETER_OPTIONVALUEDICTIONARY_H
+#define LLDB_INTERPRETER_OPTIONVALUEDICTIONARY_H
 
 #include <map>
 
@@ -24,9 +24,7 @@ public:
 
   ~OptionValueDictionary() override {}
 
-  //---------------------------------------------------------------------
   // Virtual subclass pure virtual overrides
-  //---------------------------------------------------------------------
 
   OptionValue::Type GetType() const override { return eTypeDictionary; }
 
@@ -51,9 +49,7 @@ public:
     return ConvertTypeMaskToType(m_type_mask) != eTypeInvalid;
   }
 
-  //---------------------------------------------------------------------
   // Subclass specific functions
-  //---------------------------------------------------------------------
 
   size_t GetNumValues() const { return m_values.size(); }
 
@@ -85,4 +81,4 @@ protected:
 
 } // namespace lldb_private
 
-#endif // liblldb_OptionValueDictionary_h_
+#endif // LLDB_INTERPRETER_OPTIONVALUEDICTIONARY_H

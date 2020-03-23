@@ -45,7 +45,7 @@ Unit tests
 ----------
 
 Unit tests are written using `Google Test <https://github.com/google/googletest/blob/master/googletest/docs/primer.md>`_
-and `Google Mock <https://github.com/google/googletest/blob/master/googlemock/docs/ForDummies.md>`_
+and `Google Mock <https://github.com/google/googletest/blob/master/googlemock/docs/for_dummies.md>`_
 and are located in the ``llvm/unittests`` directory.
 
 Regression tests
@@ -92,7 +92,7 @@ The test are written in C based languages or in LLVM assembly language.
 
 These tests are compiled and run under a debugger. The debugger output
 is checked to validate of debugging information. See README.txt in the
-test suite for more information . This test suite is located in the
+test suite for more information. This test suite is located in the
 ``debuginfo-tests`` Subversion module.
 
 Quick start
@@ -129,7 +129,7 @@ in release mode, i.e.
 
     % cmake -DCMAKE_BUILD_TYPE="Release" -DLLVM_ENABLE_ASSERTIONS=On
 
-If you have `Clang <http://clang.llvm.org/>`_ checked out and built, you
+If you have `Clang <https://clang.llvm.org/>`_ checked out and built, you
 can run the LLVM and Clang tests simultaneously using:
 
 .. code-block:: bash
@@ -511,7 +511,7 @@ RUN lines:
    The suffix for the host platforms shared library files. This includes the
    period as the first character.
 
-   Example: ``.so`` (Linux), ``.dylib`` (OS X), ``.dll`` (Windows)
+   Example: ``.so`` (Linux), ``.dylib`` (macOS), ``.dll`` (Windows)
 
 ``%exeext``
    The suffix for the host platforms executable files. This includes the
@@ -548,6 +548,13 @@ RUN lines:
    ``i686-pc-win32`` target, ``%itanium_abi_triple`` will expand to
    ``i686-pc-mingw32``. This allows a test to run with a specific ABI without
    constraining it to a specific triple.
+
+**FileCheck-specific substitutions:**
+
+``%ProtectFileCheckOutput``
+   This should precede a ``FileCheck`` call if and only if the call's textual
+   output affects test results.  It's usually easy to tell: just look for
+   redirection or piping of the ``FileCheck`` call's stdout or stderr.
 
 To add more substituations, look at ``test/lit.cfg`` or ``lit.local.cfg``.
 

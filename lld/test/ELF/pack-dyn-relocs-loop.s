@@ -1,8 +1,8 @@
 // REQUIRES: arm, aarch64
 
 // RUN: llvm-mc -filetype=obj -triple=aarch64-none-linux-android %s -o %t.o
-// RUN: ld.lld -shared %t.o -o %t.so --pack-dyn-relocs=android
-// RUN: llvm-readobj -s %t.so | FileCheck %s
+// RUN: ld.lld -shared %t.o -o %t.so --pack-dyn-relocs=android -z norelro -z separate-code
+// RUN: llvm-readobj -S %t.so | FileCheck %s
 
 // This test is making sure the Android packed relocation support doesn't
 // cause an infinite loop due to the size of the section oscillating
@@ -16,18 +16,18 @@
 // CHECK-NEXT:    Flags [ (0x2)
 // CHECK-NEXT:      SHF_ALLOC (0x2)
 // CHECK-NEXT:    ]
-// CHECK-NEXT:    Address: 0x210
-// CHECK-NEXT:    Offset: 0x210
-// CHECK-NEXT:    Size: 22
+// CHECK-NEXT:    Address: 0x1D8
+// CHECK-NEXT:    Offset: 0x1D8
+// CHECK-NEXT:    Size: 21
 
 // CHECK:         Name: x (43)
 // CHECK-NEXT:    Type: SHT_PROGBITS (0x1)
 // CHECK-NEXT:    Flags [ (0x2)
 // CHECK-NEXT:      SHF_ALLOC (0x2)
 // CHECK-NEXT:    ]
-// CHECK-NEXT:    Address: 0x226
-// CHECK-NEXT:    Offset: 0x226
-// CHECK-NEXT:    Size: 64980
+// CHECK-NEXT:    Address: 0x1ED
+// CHECK-NEXT:    Offset: 0x1ED
+// CHECK-NEXT:    Size: 65036
 
 // CHECK:         Name: barr (45)
 // CHECK-NEXT:    Type: SHT_PROGBITS (0x1)
@@ -38,15 +38,15 @@
 // CHECK-NEXT:    Offset: 0xFFFA
 // CHECK-NEXT:    Size: 0
 
-// CHECK:         Name: foo (71)
+// CHECK:         Name: foo (62)
 // CHECK-NEXT:    Type: SHT_PROGBITS (0x1)
 // CHECK-NEXT:    Flags [ (0x3)
 // CHECK-NEXT:      SHF_ALLOC (0x2)
 // CHECK-NEXT:      SHF_WRITE (0x1)
 // CHECK-NEXT:    ]
-// CHECK-NEXT:    Address: 0x20004
-// CHECK-NEXT:    Offset: 0x20004
-// CHECK-NEXT:    Size: 12
+// CHECK-NEXT:    Address: 0x10004
+// CHECK-NEXT:    Offset: 0x10004
+// CHECK-NEXT:    Size: 24
 
 
 .data
@@ -54,12 +54,12 @@
 
 .section foo,"aw"
 foof:
-.long foof
-.long bar-53
-.long bar
+.quad foof
+.quad bar-53
+.quad bar
 
 .section x,"a"
-.zero 64980
+.zero 65036
 
 .section barr,"a"
 .p2align 1

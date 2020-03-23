@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ThreadPlanShouldStopHere_h_
-#define liblldb_ThreadPlanShouldStopHere_h_
+#ifndef LLDB_TARGET_THREADPLANSHOULDSTOPHERE_H
+#define LLDB_TARGET_THREADPLANSHOULDSTOPHERE_H
 
 #include "lldb/Target/ThreadPlan.h"
 
@@ -62,9 +62,7 @@ public:
     eStepOutAvoidNoDebug = (1 << 2)
   };
 
-  //------------------------------------------------------------------
   // Constructors and Destructors
-  //------------------------------------------------------------------
   ThreadPlanShouldStopHere(ThreadPlan *owner);
 
   ThreadPlanShouldStopHere(ThreadPlan *owner,
@@ -137,4 +135,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_ThreadPlanShouldStopHere_h_
+#endif // LLDB_TARGET_THREADPLANSHOULDSTOPHERE_H

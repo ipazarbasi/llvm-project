@@ -46,9 +46,9 @@ bool IsConstantOffsetFromGlobal(Constant *C, GlobalValue *&GV, APInt &Offset,
 Constant *ConstantFoldInstruction(Instruction *I, const DataLayout &DL,
                                   const TargetLibraryInfo *TLI = nullptr);
 
-/// ConstantFoldConstant - Attempt to fold the constant using the
-/// specified DataLayout.
-/// If successful, the constant result is returned, if not, null is returned.
+/// ConstantFoldConstant - Fold the constant using the specified DataLayout.
+/// This function always returns a non-null constant: Either the folding result,
+/// or the original constant if further folding is not possible.
 Constant *ConstantFoldConstant(const Constant *C, const DataLayout &DL,
                                const TargetLibraryInfo *TLI = nullptr);
 
@@ -70,6 +70,12 @@ Constant *
 ConstantFoldCompareInstOperands(unsigned Predicate, Constant *LHS,
                                 Constant *RHS, const DataLayout &DL,
                                 const TargetLibraryInfo *TLI = nullptr);
+
+/// Attempt to constant fold a unary operation with the specified
+/// operand. If it fails, it returns a constant expression of the specified
+/// operands.
+Constant *ConstantFoldUnaryOpOperand(unsigned Opcode, Constant *Op,
+                                     const DataLayout &DL);
 
 /// Attempt to constant fold a binary operation with the specified
 /// operands.  If it fails, it returns a constant expression of the specified

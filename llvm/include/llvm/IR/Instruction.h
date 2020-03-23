@@ -45,6 +45,10 @@ class Instruction : public User,
   BasicBlock *Parent;
   DebugLoc DbgLoc;                         // 'dbg' Metadata cache.
 
+  /// Relative order of this instruction in its parent basic block. Used for
+  /// O(1) local dominance checks between instructions.
+  mutable unsigned Order = 0;
+
   enum {
     /// This is a bit stored in the SubClassData field which indicates whether
     /// this instruction has metadata attached to it or not.
@@ -117,6 +121,13 @@ public:
   /// the basic block that MovePos lives in, right after MovePos.
   void moveAfter(Instruction *MovePos);
 
+  /// Given an instruction Other in the same basic block as this instruction,
+  /// return true if this instruction comes before Other. In this worst case,
+  /// this takes linear time in the number of instructions in the block. The
+  /// results are cached, so in common cases when the block remains unmodified,
+  /// it takes constant time.
+  bool comesBefore(const Instruction *Other) const;
+
   //===--------------------------------------------------------------------===//
   // Subclass classification.
   //===--------------------------------------------------------------------===//
@@ -129,7 +140,7 @@ public:
   bool isUnaryOp() const { return isUnaryOp(getOpcode()); }
   bool isBinaryOp() const { return isBinaryOp(getOpcode()); }
   bool isIntDivRem() const { return isIntDivRem(getOpcode()); }
-  bool isShift() { return isShift(getOpcode()); }
+  bool isShift() const { return isShift(getOpcode()); }
   bool isCast() const { return isCast(getOpcode()); }
   bool isFuncletPad() const { return isFuncletPad(getOpcode()); }
   bool isExceptionalTerminator() const {
@@ -229,6 +240,16 @@ public:
     return hasMetadataHashEntry();
   }
 
+  /// Return true if this instruction has the given type of metadata attached.
+  bool hasMetadata(unsigned KindID) const {
+    return getMetadata(KindID) != nullptr;
+  }
+
+  /// Return true if this instruction has the given type of metadata attached.
+  bool hasMetadata(StringRef Kind) const {
+    return getMetadata(Kind) != nullptr;
+  }
+
   /// Get the metadata of given kind attached to this Instruction.
   /// If the metadata is not found then return null.
   MDNode *getMetadata(unsigned KindID) const {
@@ -310,9 +331,6 @@ public:
   /// Returns true on success with profile total weights filled in.
   /// Returns false if no metadata was found.
   bool extractProfTotalWeight(uint64_t &TotalVal) const;
-
-  /// Updates branch_weights metadata by scaling it by \p S / \p T.
-  void updateProfWeight(uint64_t S, uint64_t T);
 
   /// Sets the branch_weights metadata to \p W for CallInst.
   void setProfWeight(uint64_t W);
@@ -668,6 +686,10 @@ public:
   /// instruction must be a terminator.
   void setSuccessor(unsigned Idx, BasicBlock *BB);
 
+  /// Replace specified successor OldBB to point at the provided block.
+  /// This instruction must be a terminator.
+  void replaceSuccessorWith(BasicBlock *OldBB, BasicBlock *NewBB);
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static bool classof(const Value *V) {
     return V->getValueID() >= Value::InstructionVal;
@@ -727,6 +749,7 @@ public:
 
 private:
   friend class SymbolTableListTraits<Instruction>;
+  friend class BasicBlock; // For renumbering.
 
   // Shadow Value::setValueSubclassData with a private forwarding method so that
   // subclasses cannot accidentally use it.

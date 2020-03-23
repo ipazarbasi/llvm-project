@@ -115,7 +115,7 @@ static void CheckForPhysRegDependency(SDNode *Def, SDNode *User, unsigned Op,
     return;
 
   unsigned Reg = cast<RegisterSDNode>(User->getOperand(1))->getReg();
-  if (TargetRegisterInfo::isVirtualRegister(Reg))
+  if (Register::isVirtualRegister(Reg))
     return;
 
   unsigned ResNo = User->getOperand(2).getResNo();
@@ -198,10 +198,10 @@ static void RemoveUnusedGlue(SDNode *N, SelectionDAG *DAG) {
 /// outputs to ensure they are scheduled together and in order. This
 /// optimization may benefit some targets by improving cache locality.
 void ScheduleDAGSDNodes::ClusterNeighboringLoads(SDNode *Node) {
-  SDNode *Chain = nullptr;
+  SDValue Chain;
   unsigned NumOps = Node->getNumOperands();
   if (Node->getOperand(NumOps-1).getValueType() == MVT::Other)
-    Chain = Node->getOperand(NumOps-1).getNode();
+    Chain = Node->getOperand(NumOps-1);
   if (!Chain)
     return;
 
@@ -234,6 +234,9 @@ void ScheduleDAGSDNodes::ClusterNeighboringLoads(SDNode *Node) {
   unsigned UseCount = 0;
   for (SDNode::use_iterator I = Chain->use_begin(), E = Chain->use_end();
        I != E && UseCount < 100; ++I, ++UseCount) {
+    if (I.getUse().getResNo() != Chain.getResNo())
+      continue;
+
     SDNode *User = *I;
     if (User == Node || !Visited.insert(User).second)
       continue;
@@ -528,7 +531,7 @@ void ScheduleDAGSDNodes::AddSchedEdges() {
 /// are input.  This SUnit graph is similar to the SelectionDAG, but
 /// excludes nodes that aren't interesting to scheduling, and represents
 /// glued together nodes with a single SUnit.
-void ScheduleDAGSDNodes::BuildSchedGraph(AliasAnalysis *AA) {
+void ScheduleDAGSDNodes::BuildSchedGraph(AAResults *AA) {
   // Cluster certain nodes which should be scheduled together.
   ClusterNodes();
   // Populate the SUnits array.
@@ -656,7 +659,7 @@ void ScheduleDAGSDNodes::computeOperandLatency(SDNode *Def, SDNode *Use,
   if (Latency > 1 && Use->getOpcode() == ISD::CopyToReg &&
       !BB->succ_empty()) {
     unsigned Reg = cast<RegisterSDNode>(Use->getOperand(1))->getReg();
-    if (TargetRegisterInfo::isVirtualRegister(Reg))
+    if (Register::isVirtualRegister(Reg))
       // This copy is a liveout value. It is likely coalesced, so reduce the
       // latency so not to penalize the def.
       // FIXME: need target specific adjustment here?
@@ -808,7 +811,7 @@ EmitPhysRegCopy(SUnit *SU, DenseMap<SUnit*, unsigned> &VRBaseMap,
     } else {
       // Copy from physical register.
       assert(I->getReg() && "Unknown physical register!");
-      unsigned VRBase = MRI.createVirtualRegister(SU->CopyDstRC);
+      Register VRBase = MRI.createVirtualRegister(SU->CopyDstRC);
       bool isNew = VRBaseMap.insert(std::make_pair(SU, VRBase)).second;
       (void)isNew; // Silence compiler warning.
       assert(isNew && "Node emitted out of order - early");
@@ -853,14 +856,21 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (Before == After)
       return nullptr;
 
+    MachineInstr *MI;
     if (Before == BB->end()) {
       // There were no prior instructions; the new ones must start at the
       // beginning of the block.
-      return &Emitter.getBlock()->instr_front();
+      MI = &Emitter.getBlock()->instr_front();
     } else {
       // Return first instruction after the pre-existing instructions.
-      return &*std::next(Before);
+      MI = &*std::next(Before);
     }
+
+    if (MI->isCandidateForCallSiteEntry() &&
+        DAG->getTarget().Options.EmitCallSiteInfo)
+      MF.addCallArgsForwardingRegs(MI, DAG->getSDCallSiteInfo(Node));
+
+    return MI;
   };
 
   // If this is the first BB, emit byval parameter dbg_value's.
@@ -903,6 +913,11 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
       // Remember the source order of the inserted instruction.
       if (HasDbg)
         ProcessSourceNode(N, DAG, Emitter, VRBaseMap, Orders, Seen, NewInsn);
+
+      if (MDNode *MD = DAG->getHeapAllocSite(N))
+        if (NewInsn && NewInsn->isCall())
+          NewInsn->setHeapAllocMarker(MF, MD);
+
       GluedNodes.pop_back();
     }
     auto NewInsn =
@@ -911,6 +926,11 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     if (HasDbg)
       ProcessSourceNode(SU->getNode(), DAG, Emitter, VRBaseMap, Orders, Seen,
                         NewInsn);
+
+    if (MDNode *MD = DAG->getHeapAllocSite(SU->getNode())) {
+      if (NewInsn && NewInsn->isCall())
+        NewInsn->setHeapAllocMarker(MF, MD);
+    }
   }
 
   // Insert all the dbg_values which have not already been inserted in source
@@ -921,7 +941,7 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
     // Sort the source order instructions and use the order to insert debug
     // values. Use stable_sort so that DBG_VALUEs are inserted in the same order
     // regardless of the host's implementation fo std::sort.
-    std::stable_sort(Orders.begin(), Orders.end(), less_first());
+    llvm::stable_sort(Orders, less_first());
     std::stable_sort(DAG->DbgBegin(), DAG->DbgEnd(),
                      [](const SDDbgValue *LHS, const SDDbgValue *RHS) {
                        return LHS->getOrder() < RHS->getOrder();
@@ -1005,6 +1025,69 @@ EmitSchedule(MachineBasicBlock::iterator &InsertPos) {
 
       LastOrder = Order;
     }
+  }
+
+  // Split after an INLINEASM_BR block with outputs. This allows us to keep the
+  // copy to/from register instructions from being between two terminator
+  // instructions, which causes the machine instruction verifier agita.
+  auto TI = llvm::find_if(*BB, [](const MachineInstr &MI){
+    return MI.getOpcode() == TargetOpcode::INLINEASM_BR;
+  });
+  auto SplicePt = TI != BB->end() ? std::next(TI) : BB->end();
+  if (TI != BB->end() && SplicePt != BB->end() &&
+      TI->getOpcode() == TargetOpcode::INLINEASM_BR &&
+      SplicePt->getOpcode() == TargetOpcode::COPY) {
+    MachineBasicBlock *FallThrough = BB->getFallThrough();
+    if (!FallThrough)
+      for (const MachineOperand &MO : BB->back().operands())
+        if (MO.isMBB()) {
+          FallThrough = MO.getMBB();
+          break;
+        }
+    assert(FallThrough && "Cannot find default dest block for callbr!");
+
+    MachineBasicBlock *CopyBB = MF.CreateMachineBasicBlock(BB->getBasicBlock());
+    MachineFunction::iterator BBI(*BB);
+    MF.insert(++BBI, CopyBB);
+
+    CopyBB->splice(CopyBB->begin(), BB, SplicePt, BB->end());
+    CopyBB->setInlineAsmBrDefaultTarget();
+
+    CopyBB->addSuccessor(FallThrough, BranchProbability::getOne());
+    BB->addSuccessor(CopyBB, BranchProbability::getOne());
+
+    // Mark all physical registers defined in the original block as being live
+    // on entry to the copy block.
+    for (const auto &MI : *CopyBB)
+      for (const MachineOperand &MO : MI.operands())
+        if (MO.isReg()) {
+          Register reg = MO.getReg();
+          if (Register::isPhysicalRegister(reg)) {
+            CopyBB->addLiveIn(reg);
+            break;
+          }
+        }
+
+    // Bit of a hack: The copy block we created here exists only because we want
+    // the CFG to work with the current system. However, the successors to the
+    // block with the INLINEASM_BR instruction expect values to come from *that*
+    // block, not this usurper block. Thus we steal its successors and add them
+    // to the copy so that everyone is happy.
+    for (auto *Succ : BB->successors())
+      if (Succ != CopyBB && !CopyBB->isSuccessor(Succ))
+        CopyBB->addSuccessor(Succ, BranchProbability::getZero());
+
+    for (auto *Succ : CopyBB->successors())
+      if (BB->isSuccessor(Succ))
+        BB->removeSuccessor(Succ);
+
+    CopyBB->normalizeSuccProbs();
+    BB->normalizeSuccProbs();
+
+    BB->transferInlineAsmBrIndirectTargets(CopyBB);
+
+    InsertPos = CopyBB->end();
+    return CopyBB;
   }
 
   InsertPos = Emitter.getInsertPos();

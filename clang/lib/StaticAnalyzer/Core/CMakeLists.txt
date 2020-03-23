@@ -1,12 +1,5 @@
 set(LLVM_LINK_COMPONENTS support)
 
-# Link Z3 if the user wants to build it.
-if(CLANG_ANALYZER_WITH_Z3)
-  set(Z3_LINK_FILES ${Z3_LIBRARIES})
-else()
-  set(Z3_LINK_FILES "")
-endif()
-
 add_clang_library(clangStaticAnalyzerCore
   APSIntType.cpp
   AnalysisManager.cpp
@@ -23,7 +16,8 @@ add_clang_library(clangStaticAnalyzerCore
   CommonBugCategories.cpp
   ConstraintManager.cpp
   CoreEngine.cpp
-  DynamicTypeMap.cpp
+  DynamicSize.cpp
+  DynamicType.cpp
   Environment.cpp
   ExplodedGraph.cpp
   ExprEngine.cpp
@@ -37,7 +31,6 @@ add_clang_library(clangStaticAnalyzerCore
   LoopUnrolling.cpp
   LoopWidening.cpp
   MemRegion.cpp
-  PathDiagnostic.cpp
   PlistDiagnostics.cpp
   ProgramState.cpp
   RangeConstraintManager.cpp
@@ -46,14 +39,14 @@ add_clang_library(clangStaticAnalyzerCore
   SarifDiagnostics.cpp
   SimpleConstraintManager.cpp
   SimpleSValBuilder.cpp
+  SMTConstraintManager.cpp
   Store.cpp
   SubEngine.cpp
   SValBuilder.cpp
   SVals.cpp
   SymbolManager.cpp
-  TaintManager.cpp
+  TextDiagnostics.cpp
   WorkList.cpp
-  Z3ConstraintManager.cpp
 
   LINK_LIBS
   clangAST
@@ -61,14 +54,9 @@ add_clang_library(clangStaticAnalyzerCore
   clangAnalysis
   clangBasic
   clangCrossTU
+  clangFrontend
   clangLex
   clangRewrite
-  ${Z3_LINK_FILES}
+  clangToolingCore
   )
 
-if(CLANG_ANALYZER_WITH_Z3)
-  target_include_directories(clangStaticAnalyzerCore SYSTEM
-    PRIVATE
-    ${Z3_INCLUDE_DIR}
-    )
-endif()

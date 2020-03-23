@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBSymbol_h_
-#define LLDB_SBSymbol_h_
+#ifndef LLDB_API_SBSYMBOL_H
+#define LLDB_API_SBSYMBOL_H
 
 #include "lldb/API/SBAddress.h"
 #include "lldb/API/SBDefines.h"
@@ -55,16 +55,12 @@ public:
 
   bool GetDescription(lldb::SBStream &description);
 
-  //----------------------------------------------------------------------
   // Returns true if the symbol is externally visible in the module that it is
   // defined in
-  //----------------------------------------------------------------------
   bool IsExternal();
 
-  //----------------------------------------------------------------------
   // Returns true if the symbol was synthetically generated from something
   // other than the actual symbol table itself in the object file.
-  //----------------------------------------------------------------------
   bool IsSynthetic();
 
 protected:
@@ -87,4 +83,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_SBSymbol_h_
+#endif // LLDB_API_SBSYMBOL_H

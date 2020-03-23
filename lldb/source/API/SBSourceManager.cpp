@@ -1,4 +1,4 @@
-//===-- SBSourceManager.cpp -------------------------------------*- C++ -*-===//
+//===-- SBSourceManager.cpp -----------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -101,10 +101,10 @@ operator=(const lldb::SBSourceManager &rhs) {
                      rhs);
 
   m_opaque_up.reset(new SourceManagerImpl(*(rhs.m_opaque_up.get())));
-  return *this;
+  return LLDB_RECORD_RESULT(*this);
 }
 
-SBSourceManager::~SBSourceManager() {}
+SBSourceManager::~SBSourceManager() = default;
 
 size_t SBSourceManager::DisplaySourceLinesWithLineNumbers(
     const SBFileSpec &file, uint32_t line, uint32_t context_before,
@@ -131,10 +131,34 @@ size_t SBSourceManager::DisplaySourceLinesWithLineNumbersAndColumn(
        const char *, lldb::SBStream &),
       file, line, column, context_before, context_after, current_line_cstr, s);
 
-  if (m_opaque_up == NULL)
+  if (m_opaque_up == nullptr)
     return 0;
 
   return m_opaque_up->DisplaySourceLinesWithLineNumbers(
       file.ref(), line, column, context_before, context_after,
       current_line_cstr, s.get());
+}
+
+namespace lldb_private {
+namespace repro {
+
+template <>
+void RegisterMethods<SBSourceManager>(Registry &R) {
+  LLDB_REGISTER_CONSTRUCTOR(SBSourceManager, (const lldb::SBDebugger &));
+  LLDB_REGISTER_CONSTRUCTOR(SBSourceManager, (const lldb::SBTarget &));
+  LLDB_REGISTER_CONSTRUCTOR(SBSourceManager, (const lldb::SBSourceManager &));
+  LLDB_REGISTER_METHOD(
+      const lldb::SBSourceManager &,
+      SBSourceManager, operator=,(const lldb::SBSourceManager &));
+  LLDB_REGISTER_METHOD(size_t, SBSourceManager,
+                       DisplaySourceLinesWithLineNumbers,
+                       (const lldb::SBFileSpec &, uint32_t, uint32_t,
+                        uint32_t, const char *, lldb::SBStream &));
+  LLDB_REGISTER_METHOD(size_t, SBSourceManager,
+                       DisplaySourceLinesWithLineNumbersAndColumn,
+                       (const lldb::SBFileSpec &, uint32_t, uint32_t,
+                        uint32_t, uint32_t, const char *, lldb::SBStream &));
+}
+
+}
 }

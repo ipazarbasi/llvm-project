@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_Disassembler_h_
-#define liblldb_Disassembler_h_
+#ifndef LLDB_CORE_DISASSEMBLER_H
+#define LLDB_CORE_DISASSEMBLER_H
 
 #include "lldb/Core/Address.h"
 #include "lldb/Core/EmulateInstruction.h"
@@ -38,41 +38,21 @@
 #include <stdint.h>
 #include <stdio.h>
 
-namespace lldb_private {
-class AddressRange;
-}
-namespace lldb_private {
-class DataExtractor;
-}
-namespace lldb_private {
-class Debugger;
-}
-namespace lldb_private {
-class Disassembler;
-}
-namespace lldb_private {
-class Module;
-}
-namespace lldb_private {
-class Stream;
-}
-namespace lldb_private {
-class SymbolContext;
-}
-namespace lldb_private {
-class SymbolContextList;
-}
-namespace lldb_private {
-class Target;
-}
-namespace lldb_private {
-struct RegisterInfo;
-}
 namespace llvm {
 template <typename T> class SmallVectorImpl;
 }
 
 namespace lldb_private {
+class AddressRange;
+class DataExtractor;
+class Debugger;
+class Disassembler;
+class Module;
+class Stream;
+class SymbolContext;
+class SymbolContextList;
+class Target;
+struct RegisterInfo;
 
 class Instruction {
 public:
@@ -109,7 +89,6 @@ public:
     m_address = addr;
   }
 
-  //------------------------------------------------------------------
   /// Dump the text representation of this Instruction to a Stream
   ///
   /// Print the (optional) address, (optional) bytes, opcode,
@@ -159,7 +138,6 @@ public:
   ///     Debugger::FormatDisassemblerAddress() string)
   ///     so this method can properly align the instruction opcodes.
   ///     May be 0 to indicate no indentation/alignment of the opcodes.
-  //------------------------------------------------------------------
   virtual void Dump(Stream *s, uint32_t max_opcode_byte_size, bool show_address,
                     bool show_bytes, const ExecutionContext *exe_ctx,
                     const SymbolContext *sym_ctx,
@@ -292,8 +270,37 @@ public:
 
   lldb::InstructionSP GetInstructionAtIndex(size_t idx) const;
 
+  //------------------------------------------------------------------
+  /// Get the index of the next branch instruction.
+  ///
+  /// Given a list of instructions, find the next branch instruction
+  /// in the list by returning an index.
+  ///
+  /// @param[in] start
+  ///     The instruction index of the first instruction to check.
+  ///
+  /// @param[in] target
+  ///     A LLDB target object that is used to resolve addresses.
+  ///    
+  /// @param[in] ignore_calls
+  ///     It true, then fine the first branch instruction that isn't
+  ///     a function call (a branch that calls and returns to the next
+  ///     instruction). If false, find the instruction index of any 
+  ///     branch in the list.
+  ///     
+  /// @param[out] found_calls
+  ///     If non-null, this will be set to true if any calls were found in 
+  ///     extending the range.
+  ///    
+  /// @return
+  ///     The instruction index of the first branch that is at or past
+  ///     \a start. Returns UINT32_MAX if no matching branches are 
+  ///     found.
+  //------------------------------------------------------------------
   uint32_t GetIndexOfNextBranchInstruction(uint32_t start,
-                                           Target &target) const;
+                                           Target &target,
+                                           bool ignore_calls,
+                                           bool *found_calls) const;
 
   uint32_t GetIndexOfInstructionAtLoadAddress(lldb::addr_t load_addr,
                                               Target &target);
@@ -372,13 +379,19 @@ public:
   FindPlugin(const ArchSpec &arch, const char *flavor, const char *plugin_name);
 
   // This version will use the value in the Target settings if flavor is NULL;
-  static lldb::DisassemblerSP
-  FindPluginForTarget(const lldb::TargetSP target_sp, const ArchSpec &arch,
-                      const char *flavor, const char *plugin_name);
+  static lldb::DisassemblerSP FindPluginForTarget(const Target &target,
+                                                  const ArchSpec &arch,
+                                                  const char *flavor,
+                                                  const char *plugin_name);
+
+  struct Limit {
+    enum { Bytes, Instructions } kind;
+    lldb::addr_t value;
+  };
 
   static lldb::DisassemblerSP
   DisassembleRange(const ArchSpec &arch, const char *plugin_name,
-                   const char *flavor, const ExecutionContext &exe_ctx,
+                   const char *flavor, Target &target,
                    const AddressRange &disasm_range, bool prefer_file_cache);
 
   static lldb::DisassemblerSP
@@ -389,65 +402,29 @@ public:
 
   static bool Disassemble(Debugger &debugger, const ArchSpec &arch,
                           const char *plugin_name, const char *flavor,
-                          const ExecutionContext &exe_ctx,
-                          const AddressRange &range, uint32_t num_instructions,
-                          bool mixed_source_and_assembly,
-                          uint32_t num_mixed_context_lines, uint32_t options,
-                          Stream &strm);
-
-  static bool Disassemble(Debugger &debugger, const ArchSpec &arch,
-                          const char *plugin_name, const char *flavor,
                           const ExecutionContext &exe_ctx, const Address &start,
-                          uint32_t num_instructions,
-                          bool mixed_source_and_assembly,
+                          Limit limit, bool mixed_source_and_assembly,
                           uint32_t num_mixed_context_lines, uint32_t options,
                           Stream &strm);
 
-  static size_t
-  Disassemble(Debugger &debugger, const ArchSpec &arch, const char *plugin_name,
-              const char *flavor, const ExecutionContext &exe_ctx,
-              SymbolContextList &sc_list, uint32_t num_instructions,
-              bool mixed_source_and_assembly, uint32_t num_mixed_context_lines,
-              uint32_t options, Stream &strm);
-
-  static bool
-  Disassemble(Debugger &debugger, const ArchSpec &arch, const char *plugin_name,
-              const char *flavor, const ExecutionContext &exe_ctx,
-              ConstString name, Module *module,
-              uint32_t num_instructions, bool mixed_source_and_assembly,
-              uint32_t num_mixed_context_lines, uint32_t options, Stream &strm);
-
   static bool
   Disassemble(Debugger &debugger, const ArchSpec &arch, const char *plugin_name,
               const char *flavor, const ExecutionContext &exe_ctx,
               uint32_t num_instructions, bool mixed_source_and_assembly,
               uint32_t num_mixed_context_lines, uint32_t options, Stream &strm);
 
-  //------------------------------------------------------------------
   // Constructors and Destructors
-  //------------------------------------------------------------------
   Disassembler(const ArchSpec &arch, const char *flavor);
   ~Disassembler() override;
 
-  typedef const char *(*SummaryCallback)(const Instruction &inst,
-                                         ExecutionContext *exe_context,
-                                         void *user_data);
+  void PrintInstructions(Debugger &debugger, const ArchSpec &arch,
+                         const ExecutionContext &exe_ctx,
+                         bool mixed_source_and_assembly,
+                         uint32_t num_mixed_context_lines, uint32_t options,
+                         Stream &strm);
 
-  static bool PrintInstructions(Disassembler *disasm_ptr, Debugger &debugger,
-                                const ArchSpec &arch,
-                                const ExecutionContext &exe_ctx,
-                                uint32_t num_instructions,
-                                bool mixed_source_and_assembly,
-                                uint32_t num_mixed_context_lines,
-                                uint32_t options, Stream &strm);
-
-  size_t ParseInstructions(const ExecutionContext *exe_ctx,
-                           const AddressRange &range, Stream *error_strm_ptr,
-                           bool prefer_file_cache);
-
-  size_t ParseInstructions(const ExecutionContext *exe_ctx,
-                           const Address &range, uint32_t num_instructions,
-                           bool prefer_file_cache);
+  size_t ParseInstructions(Target &target, Address address, Limit limit,
+                           Stream *error_strm_ptr, bool prefer_file_cache);
 
   virtual size_t DecodeInstructions(const Address &base_addr,
                                     const DataExtractor &data,
@@ -535,21 +512,17 @@ protected:
     return ElideMixedSourceAndDisassemblyLine(exe_ctx, sc, sl);
   };
 
-  //------------------------------------------------------------------
   // Classes that inherit from Disassembler can see and modify these
-  //------------------------------------------------------------------
   ArchSpec m_arch;
   InstructionList m_instruction_list;
   lldb::addr_t m_base_addr;
   std::string m_flavor;
 
 private:
-  //------------------------------------------------------------------
   // For Disassembler only
-  //------------------------------------------------------------------
   DISALLOW_COPY_AND_ASSIGN(Disassembler);
 };
 
 } // namespace lldb_private
 
-#endif // liblldb_Disassembler_h_
+#endif // LLDB_CORE_DISASSEMBLER_H

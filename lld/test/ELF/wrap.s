@@ -3,18 +3,18 @@
 // RUN: llvm-mc -filetype=obj -triple=x86_64-pc-linux %p/Inputs/wrap.s -o %t2
 
 // RUN: ld.lld -o %t3 %t %t2 -wrap foo -wrap nosuchsym
-// RUN: llvm-objdump -d -print-imm-hex %t3 | FileCheck %s
+// RUN: llvm-objdump -d --print-imm-hex %t3 | FileCheck %s
 // RUN: ld.lld -o %t3 %t %t2 --wrap foo -wrap=nosuchsym
-// RUN: llvm-objdump -d -print-imm-hex %t3 | FileCheck %s
+// RUN: llvm-objdump -d --print-imm-hex %t3 | FileCheck %s
 // RUN: ld.lld -o %t3 %t %t2 --wrap foo --wrap foo -wrap=nosuchsym
-// RUN: llvm-objdump -d -print-imm-hex %t3 | FileCheck %s
+// RUN: llvm-objdump -d --print-imm-hex %t3 | FileCheck %s
 
-// CHECK: _start:
+// CHECK: <_start>:
 // CHECK-NEXT: movl $0x11010, %edx
 // CHECK-NEXT: movl $0x11010, %edx
 // CHECK-NEXT: movl $0x11000, %edx
 
-// RUN: llvm-readobj -t %t3 > %t4.dump
+// RUN: llvm-readobj --symbols %t3 > %t4.dump
 // RUN: FileCheck --check-prefix=SYM1 %s < %t4.dump
 // RUN: FileCheck --check-prefix=SYM2 %s < %t4.dump
 // RUN: FileCheck --check-prefix=SYM3 %s < %t4.dump

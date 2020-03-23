@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_ThreadPlanFundamental_h_
-#define liblldb_ThreadPlanFundamental_h_
+#ifndef LLDB_TARGET_THREADPLANBASE_H
+#define LLDB_TARGET_THREADPLANBASE_H
 
 #include "lldb/Target/Process.h"
 #include "lldb/Target/Thread.h"
@@ -15,12 +15,10 @@
 
 namespace lldb_private {
 
-//------------------------------------------------------------------
 //  Base thread plans:
 //  This is the generic version of the bottom most plan on the plan stack.  It
 //  should
 //  be able to handle generic breakpoint hitting, and signals and exceptions.
-//------------------------------------------------------------------
 
 class ThreadPlanBase : public ThreadPlan {
   friend class Process; // RunThreadPlan manages "stopper" base plans.
@@ -54,4 +52,4 @@ private:
 
 } // namespace lldb_private
 
-#endif // liblldb_ThreadPlanFundamental_h_
+#endif // LLDB_TARGET_THREADPLANBASE_H

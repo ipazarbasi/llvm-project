@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef lldb_AppleGetItemInfoHandler_h_
-#define lldb_AppleGetItemInfoHandler_h_
+#ifndef LLDB_SOURCE_PLUGINS_SYSTEMRUNTIME_MACOSX_APPLEGETITEMINFOHANDLER_H
+#define LLDB_SOURCE_PLUGINS_SYSTEMRUNTIME_MACOSX_APPLEGETITEMINFOHANDLER_H
 
 #include <map>
 #include <mutex>
@@ -55,7 +55,6 @@ public:
         : item_buffer_ptr(LLDB_INVALID_ADDRESS), item_buffer_size(0) {}
   };
 
-  //----------------------------------------------------------
   /// Get the information about a work item by calling
   /// __introspection_dispatch_queue_item_get_info.  If there's a page of
   /// memory that needs to be freed, pass in the address and size and it will
@@ -86,7 +85,6 @@ public:
   ///     failure of any kind while getting
   ///     the information, the item_buffer_ptr value will be
   ///     LLDB_INVALID_ADDRESS.
-  //----------------------------------------------------------
   GetItemInfoReturnInfo GetItemInfo(Thread &thread, lldb::addr_t item,
                                     lldb::addr_t page_to_free,
                                     uint64_t page_to_free_size,
@@ -111,4 +109,4 @@ private:
 
 } // using namespace lldb_private
 
-#endif // lldb_AppleGetItemInfoHandler_h_
+#endif // LLDB_SOURCE_PLUGINS_SYSTEMRUNTIME_MACOSX_APPLEGETITEMINFOHANDLER_H

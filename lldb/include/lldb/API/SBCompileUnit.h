@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBCompileUnit_h_
-#define LLDB_SBCompileUnit_h_
+#ifndef LLDB_API_SBCOMPILEUNIT_H
+#define LLDB_API_SBCOMPILEUNIT_H
 
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBFileSpec.h"
@@ -48,7 +48,6 @@ public:
   uint32_t FindSupportFileIndex(uint32_t start_idx, const SBFileSpec &sb_file,
                                 bool full);
 
-  //------------------------------------------------------------------
   /// Get all types matching \a type_mask from debug info in this
   /// compile unit.
   ///
@@ -62,7 +61,6 @@ public:
   ///
   /// \return
   ///    A list of types in this compile unit that match \a type_mask
-  //------------------------------------------------------------------
   lldb::SBTypeList GetTypes(uint32_t type_mask = lldb::eTypeClassAny);
 
   lldb::LanguageType GetLanguage();
@@ -94,4 +92,4 @@ private:
 
 } // namespace lldb
 
-#endif // LLDB_SBCompileUnit_h_
+#endif // LLDB_API_SBCOMPILEUNIT_H

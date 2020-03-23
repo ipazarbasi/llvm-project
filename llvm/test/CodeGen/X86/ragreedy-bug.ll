@@ -10,6 +10,8 @@
 ; Mem-move
 ; CHECK-NEXT: movl
 ; CHECK-NEXT: andl
+; CHECK-NEXT: LBB0
+; CHECK-NEXT: in Loop
 ; CHECK-NEXT: testl
 ; CHECK-NEXT: jne
 ; CHECK: cond.true.i.i217
@@ -17,20 +19,20 @@
 ; Mem-move
 ; CHECK-NEXT: movl
 ; CHECK-NEXT: andl
+; CHECK-NEXT: LBB0
+; CHECK-NEXT: in Loop
 ; CHECK-NEXT: testl
 ; CHECK-NEXT: je
 ; CHECK: cond.false.i.i
 ; CHECK: maskrune
 ; CHECK-NEXT: movzbl
 ; CHECK-NEXT: movzbl
-; CHECK-NEXT: testl
-; CHECK-NEXT: je
+; CHECK-NEXT: jmp
 ; CHECK: cond.false.i.i219
 ; CHECK: maskrune
 ; CHECK-NEXT: movzbl
 ; CHECK-NEXT: movzbl
-; CHECK-NEXT: testl
-; CHECK-NEXT: jne
+; CHECK-NEXT: jmp
 
 %struct.List_o_links_struct = type { i32, i32, i32, %struct.List_o_links_struct* }
 %struct.Connector_struct = type { i16, i16, i8, i8, %struct.Connector_struct*, i8* }
@@ -291,8 +293,8 @@ return:
 !991 = !{!"branch_weights", i32 8677007, i32 4606493}
 !992 = !{!"branch_weights", i32 -1172426948, i32 145094705}
 !993 = !{!"branch_weights", i32 1468914, i32 5683688}
-!994 = !{!"branch_weights", i32 114025221, i32 -1217548794, i32 -1199521551, i32 87712616}
-!995 = !{!"branch_weights", i32 1853716452, i32 -444717951, i32 932776759}
+!994 = !{!"branch_weights", i32 114025221, i32 -1217548794, i32 -1199521551}
+!995 = !{!"branch_weights", i32 1853716452, i32 -444717951}
 !996 = !{!"branch_weights", i32 1004870, i32 20259}
 !997 = !{!"branch_weights", i32 20071, i32 189}
 !998 = !{!"branch_weights", i32 -1020255939, i32 572177766}

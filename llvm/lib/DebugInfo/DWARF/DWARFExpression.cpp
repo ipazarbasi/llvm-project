@@ -93,12 +93,18 @@ static DescVector getDescriptions() {
   Descriptions[DW_OP_implicit_value] =
       Desc(Op::Dwarf3, Op::SizeLEB, Op::SizeBlock);
   Descriptions[DW_OP_stack_value] = Desc(Op::Dwarf3);
+  Descriptions[DW_OP_WASM_location] =
+      Desc(Op::Dwarf4, Op::SizeLEB, Op::SignedSizeLEB);
   Descriptions[DW_OP_GNU_push_tls_address] = Desc(Op::Dwarf3);
   Descriptions[DW_OP_addrx] = Desc(Op::Dwarf4, Op::SizeLEB);
   Descriptions[DW_OP_GNU_addr_index] = Desc(Op::Dwarf4, Op::SizeLEB);
   Descriptions[DW_OP_GNU_const_index] = Desc(Op::Dwarf4, Op::SizeLEB);
+  Descriptions[DW_OP_GNU_entry_value] = Desc(Op::Dwarf4, Op::SizeLEB);
 
   Descriptions[DW_OP_convert] = Desc(Op::Dwarf5, Op::BaseTypeRef);
+  Descriptions[DW_OP_entry_value] = Desc(Op::Dwarf5, Op::SizeLEB);
+  Descriptions[DW_OP_regval_type] =
+      Desc(Op::Dwarf5, Op::SizeLEB, Op::BaseTypeRef);
 
   return Descriptions;
 }
@@ -112,12 +118,8 @@ static DWARFExpression::Operation::Description getOpDesc(unsigned OpCode) {
   return Descriptions[OpCode];
 }
 
-static uint8_t getRefAddrSize(uint8_t AddrSize, uint16_t Version) {
-  return (Version == 2) ? AddrSize : 4;
-}
-
-bool DWARFExpression::Operation::extract(DataExtractor Data, uint16_t Version,
-                                         uint8_t AddressSize, uint32_t Offset) {
+bool DWARFExpression::Operation::extract(DataExtractor Data,
+                                         uint8_t AddressSize, uint64_t Offset) {
   Opcode = Data.getU8(&Offset);
 
   Desc = getOpDesc(Opcode);
@@ -153,20 +155,11 @@ bool DWARFExpression::Operation::extract(DataExtractor Data, uint16_t Version,
       Operands[Operand] = Data.getU64(&Offset);
       break;
     case Operation::SizeAddr:
-      if (AddressSize == 8) {
-        Operands[Operand] = Data.getU64(&Offset);
-      } else {
-        assert(AddressSize == 4);
-        Operands[Operand] = Data.getU32(&Offset);
-      }
+      Operands[Operand] = Data.getUnsigned(&Offset, AddressSize);
       break;
     case Operation::SizeRefAddr:
-      if (getRefAddrSize(AddressSize, Version) == 8) {
-        Operands[Operand] = Data.getU64(&Offset);
-      } else {
-        assert(getRefAddrSize(AddressSize, Version) == 4);
-        Operands[Operand] = Data.getU32(&Offset);
-      }
+      // TODO: Add support for 64-bit DWARF format.
+      Operands[Operand] = Data.getU32(&Offset);
       break;
     case Operation::SizeLEB:
       if (Signed)
@@ -188,13 +181,29 @@ bool DWARFExpression::Operation::extract(DataExtractor Data, uint16_t Version,
     default:
       llvm_unreachable("Unknown DWARFExpression Op size");
     }
+
+    OperandEndOffsets[Operand] = Offset;
   }
 
   EndOffset = Offset;
   return true;
 }
 
-static bool prettyPrintRegisterOp(raw_ostream &OS, uint8_t Opcode,
+static void prettyPrintBaseTypeRef(DWARFUnit *U, raw_ostream &OS,
+                                   uint64_t Operands[2], unsigned Operand) {
+  assert(Operand < 2 && "operand out of bounds");
+  auto Die = U->getDIEForOffset(U->getOffset() + Operands[Operand]);
+  if (Die && Die.getTag() == dwarf::DW_TAG_base_type) {
+    OS << format(" (0x%08" PRIx64 ")", U->getOffset() + Operands[Operand]);
+    if (auto Name = Die.find(dwarf::DW_AT_name))
+      OS << " \"" << Name->getAsCString() << "\"";
+  } else {
+    OS << format(" <invalid base_type ref: 0x%" PRIx64 ">",
+                 Operands[Operand]);
+  }
+}
+
+static bool prettyPrintRegisterOp(DWARFUnit *U, raw_ostream &OS, uint8_t Opcode,
                                   uint64_t Operands[2],
                                   const MCRegisterInfo *MRI, bool isEH) {
   if (!MRI)
@@ -203,21 +212,24 @@ static bool prettyPrintRegisterOp(raw_ostream &OS, uint8_t Opcode,
   uint64_t DwarfRegNum;
   unsigned OpNum = 0;
 
-  if (Opcode == DW_OP_bregx || Opcode == DW_OP_regx)
+  if (Opcode == DW_OP_bregx || Opcode == DW_OP_regx ||
+      Opcode == DW_OP_regval_type)
     DwarfRegNum = Operands[OpNum++];
   else if (Opcode >= DW_OP_breg0 && Opcode < DW_OP_bregx)
     DwarfRegNum = Opcode - DW_OP_breg0;
   else
     DwarfRegNum = Opcode - DW_OP_reg0;
 
-  int LLVMRegNum = MRI->getLLVMRegNum(DwarfRegNum, isEH);
-  if (LLVMRegNum >= 0) {
-    if (const char *RegName = MRI->getName(LLVMRegNum)) {
+  if (Optional<unsigned> LLVMRegNum = MRI->getLLVMRegNum(DwarfRegNum, isEH)) {
+    if (const char *RegName = MRI->getName(*LLVMRegNum)) {
       if ((Opcode >= DW_OP_breg0 && Opcode <= DW_OP_breg31) ||
           Opcode == DW_OP_bregx)
         OS << format(" %s%+" PRId64, RegName, Operands[OpNum]);
       else
         OS << ' ' << RegName;
+
+      if (Opcode == DW_OP_regval_type)
+        prettyPrintBaseTypeRef(U, OS, Operands, 1);
       return true;
     }
   }
@@ -241,8 +253,9 @@ bool DWARFExpression::Operation::print(raw_ostream &OS,
 
   if ((Opcode >= DW_OP_breg0 && Opcode <= DW_OP_breg31) ||
       (Opcode >= DW_OP_reg0 && Opcode <= DW_OP_reg31) ||
-      Opcode == DW_OP_bregx || Opcode == DW_OP_regx)
-    if (prettyPrintRegisterOp(OS, Opcode, Operands, RegInfo, isEH))
+      Opcode == DW_OP_bregx || Opcode == DW_OP_regx ||
+      Opcode == DW_OP_regval_type)
+    if (prettyPrintRegisterOp(U, OS, Opcode, Operands, RegInfo, isEH))
       return true;
 
   for (unsigned Operand = 0; Operand < 2; ++Operand) {
@@ -253,23 +266,22 @@ bool DWARFExpression::Operation::print(raw_ostream &OS,
       break;
 
     if (Size == Operation::BaseTypeRef && U) {
-      auto Die = U->getDIEForOffset(U->getOffset() + Operands[Operand]);
-      if (Die && Die.getTag() == dwarf::DW_TAG_base_type) {
-        OS << format(" (0x%08x)", U->getOffset() + Operands[Operand]);
-        if (auto Name = Die.find(dwarf::DW_AT_name))
-          OS << " \"" << Name->getAsCString() << "\"";
-      } else {
-        OS << format(" <invalid base_type ref: 0x%" PRIx64 ">",
-                     Operands[Operand]);
-      }
+      // For DW_OP_convert the operand may be 0 to indicate that conversion to
+      // the generic type should be done. The same holds for DW_OP_reinterpret,
+      // which is currently not supported.
+      if (Opcode == DW_OP_convert && Operands[Operand] == 0)
+        OS << " 0x0";
+      else
+        prettyPrintBaseTypeRef(U, OS, Operands, Operand);
     } else if (Size == Operation::SizeBlock) {
-      uint32_t Offset = Operands[Operand];
+      uint64_t Offset = Operands[Operand];
       for (unsigned i = 0; i < Operands[Operand - 1]; ++i)
         OS << format(" 0x%02x", Expr->Data.getU8(&Offset));
     } else {
       if (Signed)
         OS << format(" %+" PRId64, (int64_t)Operands[Operand]);
-      else
+      else if (Opcode != DW_OP_entry_value &&
+               Opcode != DW_OP_GNU_entry_value)
         OS << format(" 0x%" PRIx64, Operands[Operand]);
     }
   }
@@ -278,13 +290,28 @@ bool DWARFExpression::Operation::print(raw_ostream &OS,
 
 void DWARFExpression::print(raw_ostream &OS, const MCRegisterInfo *RegInfo,
                             DWARFUnit *U, bool IsEH) const {
+  uint32_t EntryValExprSize = 0;
   for (auto &Op : *this) {
     if (!Op.print(OS, this, RegInfo, U, IsEH)) {
-      uint32_t FailOffset = Op.getEndOffset();
+      uint64_t FailOffset = Op.getEndOffset();
       while (FailOffset < Data.getData().size())
         OS << format(" %02x", Data.getU8(&FailOffset));
       return;
     }
+
+    if (Op.getCode() == DW_OP_entry_value ||
+        Op.getCode() == DW_OP_GNU_entry_value) {
+      OS << "(";
+      EntryValExprSize = Op.getRawOperand(0);
+      continue;
+    }
+
+    if (EntryValExprSize) {
+      EntryValExprSize--;
+      if (EntryValExprSize == 0)
+        OS << ")";
+    }
+
     if (Op.getEndOffset() < Data.getData().size())
       OS << ", ";
   }
@@ -299,6 +326,12 @@ bool DWARFExpression::Operation::verify(DWARFUnit *U) {
       break;
 
     if (Size == Operation::BaseTypeRef) {
+      // For DW_OP_convert the operand may be 0 to indicate that conversion to
+      // the generic type should be done, so don't look up a base type in that
+      // case. The same holds for DW_OP_reinterpret, which is currently not
+      // supported.
+      if (Opcode == DW_OP_convert && Operands[Operand] == 0)
+        continue;
       auto Die = U->getDIEForOffset(U->getOffset() + Operands[Operand]);
       if (!Die || Die.getTag() != dwarf::DW_TAG_base_type) {
         Error = true;

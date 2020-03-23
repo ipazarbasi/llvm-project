@@ -5,14 +5,16 @@ add_clang_library(clangTidyUtils
   DeclRefExprUtils.cpp
   ExceptionAnalyzer.cpp
   ExprSequence.cpp
+  FileExtensionsUtils.cpp
   FixItHintUtils.cpp
-  HeaderFileExtensionsUtils.cpp
   HeaderGuard.cpp
   IncludeInserter.cpp
   IncludeSorter.cpp
   LexerUtils.cpp
   NamespaceAliaser.cpp
   OptionsUtils.cpp
+  RenamerClangTidyCheck.cpp
+  TransformerClangTidyCheck.cpp
   TypeTraits.cpp
   UsingInserter.cpp
 
@@ -21,5 +23,7 @@ add_clang_library(clangTidyUtils
   clangASTMatchers
   clangBasic
   clangLex
+  clangSema
   clangTidy
+  clangTransformer
   )

@@ -16,7 +16,7 @@
 #include "polly/LinkAllPasses.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/PassManager.h"
+#include "llvm/Pass.h"
 
 #define DEBUG_TYPE "polly-rewrite-byref-params"
 
@@ -63,7 +63,7 @@ public:
     if (!Alloca)
       return;
 
-    std::string InstName = Alloca->getName();
+    std::string InstName = Alloca->getName().str();
 
     auto NewAlloca =
         new AllocaInst(Alloca->getType()->getElementType(), 0,

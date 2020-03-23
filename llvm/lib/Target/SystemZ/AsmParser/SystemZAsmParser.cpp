@@ -6,8 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "InstPrinter/SystemZInstPrinter.h"
+#include "MCTargetDesc/SystemZInstPrinter.h"
 #include "MCTargetDesc/SystemZMCTargetDesc.h"
+#include "TargetInfo/SystemZTargetInfo.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -154,11 +155,11 @@ public:
   // Create particular kinds of operand.
   static std::unique_ptr<SystemZOperand> createInvalid(SMLoc StartLoc,
                                                        SMLoc EndLoc) {
-    return make_unique<SystemZOperand>(KindInvalid, StartLoc, EndLoc);
+    return std::make_unique<SystemZOperand>(KindInvalid, StartLoc, EndLoc);
   }
 
   static std::unique_ptr<SystemZOperand> createToken(StringRef Str, SMLoc Loc) {
-    auto Op = make_unique<SystemZOperand>(KindToken, Loc, Loc);
+    auto Op = std::make_unique<SystemZOperand>(KindToken, Loc, Loc);
     Op->Token.Data = Str.data();
     Op->Token.Length = Str.size();
     return Op;
@@ -166,7 +167,7 @@ public:
 
   static std::unique_ptr<SystemZOperand>
   createReg(RegisterKind Kind, unsigned Num, SMLoc StartLoc, SMLoc EndLoc) {
-    auto Op = make_unique<SystemZOperand>(KindReg, StartLoc, EndLoc);
+    auto Op = std::make_unique<SystemZOperand>(KindReg, StartLoc, EndLoc);
     Op->Reg.Kind = Kind;
     Op->Reg.Num = Num;
     return Op;
@@ -174,7 +175,7 @@ public:
 
   static std::unique_ptr<SystemZOperand>
   createImm(const MCExpr *Expr, SMLoc StartLoc, SMLoc EndLoc) {
-    auto Op = make_unique<SystemZOperand>(KindImm, StartLoc, EndLoc);
+    auto Op = std::make_unique<SystemZOperand>(KindImm, StartLoc, EndLoc);
     Op->Imm = Expr;
     return Op;
   }
@@ -183,7 +184,7 @@ public:
   createMem(MemoryKind MemKind, RegisterKind RegKind, unsigned Base,
             const MCExpr *Disp, unsigned Index, const MCExpr *LengthImm,
             unsigned LengthReg, SMLoc StartLoc, SMLoc EndLoc) {
-    auto Op = make_unique<SystemZOperand>(KindMem, StartLoc, EndLoc);
+    auto Op = std::make_unique<SystemZOperand>(KindMem, StartLoc, EndLoc);
     Op->Mem.MemKind = MemKind;
     Op->Mem.RegKind = RegKind;
     Op->Mem.Base = Base;
@@ -199,7 +200,7 @@ public:
   static std::unique_ptr<SystemZOperand>
   createImmTLS(const MCExpr *Imm, const MCExpr *Sym,
                SMLoc StartLoc, SMLoc EndLoc) {
-    auto Op = make_unique<SystemZOperand>(KindImmTLS, StartLoc, EndLoc);
+    auto Op = std::make_unique<SystemZOperand>(KindImmTLS, StartLoc, EndLoc);
     Op->ImmTLS.Imm = Imm;
     Op->ImmTLS.Sym = Sym;
     return Op;
@@ -404,7 +405,7 @@ private:
     SMLoc StartLoc, EndLoc;
   };
 
-  bool parseRegister(Register &Reg);
+  bool parseRegister(Register &Reg, bool RestoreOnFailure = false);
 
   bool parseRegister(Register &Reg, RegisterGroup Group, const unsigned *Regs,
                      bool IsAddress = false);
@@ -448,6 +449,10 @@ public:
   // Override MCTargetAsmParser.
   bool ParseDirective(AsmToken DirectiveID) override;
   bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc) override;
+  bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc,
+                     bool RestoreOnFailure);
+  OperandMatchResultTy tryParseRegister(unsigned &RegNo, SMLoc &StartLoc,
+                                        SMLoc &EndLoc) override;
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
                         SMLoc NameLoc, OperandVector &Operands) override;
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
@@ -650,7 +655,6 @@ static void printMCExpr(const MCExpr *E, raw_ostream &OS) {
 
 void SystemZOperand::print(raw_ostream &OS) const {
   switch (Kind) {
-    break;
   case KindToken:
     OS << "Token:" << getToken();
     break;
@@ -691,27 +695,37 @@ void SystemZOperand::print(raw_ostream &OS) const {
 }
 
 // Parse one register of the form %<prefix><number>.
-bool SystemZAsmParser::parseRegister(Register &Reg) {
+bool SystemZAsmParser::parseRegister(Register &Reg, bool RestoreOnFailure) {
   Reg.StartLoc = Parser.getTok().getLoc();
 
   // Eat the % prefix.
   if (Parser.getTok().isNot(AsmToken::Percent))
     return Error(Parser.getTok().getLoc(), "register expected");
+  const AsmToken &PercentTok = Parser.getTok();
   Parser.Lex();
 
   // Expect a register name.
-  if (Parser.getTok().isNot(AsmToken::Identifier))
+  if (Parser.getTok().isNot(AsmToken::Identifier)) {
+    if (RestoreOnFailure)
+      getLexer().UnLex(PercentTok);
     return Error(Reg.StartLoc, "invalid register");
+  }
 
   // Check that there's a prefix.
   StringRef Name = Parser.getTok().getString();
-  if (Name.size() < 2)
+  if (Name.size() < 2) {
+    if (RestoreOnFailure)
+      getLexer().UnLex(PercentTok);
     return Error(Reg.StartLoc, "invalid register");
+  }
   char Prefix = Name[0];
 
   // Treat the rest of the register name as a register number.
-  if (Name.substr(1).getAsInteger(10, Reg.Num))
+  if (Name.substr(1).getAsInteger(10, Reg.Num)) {
+    if (RestoreOnFailure)
+      getLexer().UnLex(PercentTok);
     return Error(Reg.StartLoc, "invalid register");
+  }
 
   // Look for valid combinations of prefix and number.
   if (Prefix == 'r' && Reg.Num < 16)
@@ -724,8 +738,11 @@ bool SystemZAsmParser::parseRegister(Register &Reg) {
     Reg.Group = RegAR;
   else if (Prefix == 'c' && Reg.Num < 16)
     Reg.Group = RegCR;
-  else
+  else {
+    if (RestoreOnFailure)
+      getLexer().UnLex(PercentTok);
     return Error(Reg.StartLoc, "invalid register");
+  }
 
   Reg.EndLoc = Parser.getTok().getLoc();
   Parser.Lex();
@@ -1118,15 +1135,15 @@ bool SystemZAsmParser::ParseDirectiveInsn(SMLoc L) {
   }
 
   // Emit as a regular instruction.
-  Parser.getStreamer().EmitInstruction(Inst, getSTI());
+  Parser.getStreamer().emitInstruction(Inst, getSTI());
 
   return false;
 }
 
 bool SystemZAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
-                                     SMLoc &EndLoc) {
+                                     SMLoc &EndLoc, bool RestoreOnFailure) {
   Register Reg;
-  if (parseRegister(Reg))
+  if (parseRegister(Reg, RestoreOnFailure))
     return true;
   if (Reg.Group == RegGR)
     RegNo = SystemZMC::GR64Regs[Reg.Num];
@@ -1141,6 +1158,25 @@ bool SystemZAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
   StartLoc = Reg.StartLoc;
   EndLoc = Reg.EndLoc;
   return false;
+}
+
+bool SystemZAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc,
+                                     SMLoc &EndLoc) {
+  return ParseRegister(RegNo, StartLoc, EndLoc, /*RestoreOnFailure=*/false);
+}
+
+OperandMatchResultTy SystemZAsmParser::tryParseRegister(unsigned &RegNo,
+                                                        SMLoc &StartLoc,
+                                                        SMLoc &EndLoc) {
+  bool Result =
+      ParseRegister(RegNo, StartLoc, EndLoc, /*RestoreOnFailure=*/true);
+  bool PendingErrors = getParser().hasPendingError();
+  getParser().clearPendingErrors();
+  if (PendingErrors)
+    return MatchOperand_ParseFail;
+  if (Result)
+    return MatchOperand_NoMatch;
+  return MatchOperand_Success;
 }
 
 bool SystemZAsmParser::ParseInstruction(ParseInstructionInfo &Info,
@@ -1252,7 +1288,7 @@ bool SystemZAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   switch (MatchResult) {
   case Match_Success:
     Inst.setLoc(IDLoc);
-    Out.EmitInstruction(Inst, getSTI());
+    Out.emitInstruction(Inst, getSTI());
     return false;
 
   case Match_MissingFeature: {
@@ -1304,20 +1340,38 @@ SystemZAsmParser::parsePCRel(OperandVector &Operands, int64_t MinVal,
   if (getParser().parseExpression(Expr))
     return MatchOperand_NoMatch;
 
+  auto isOutOfRangeConstant = [&](const MCExpr *E) -> bool {
+    if (auto *CE = dyn_cast<MCConstantExpr>(E)) {
+      int64_t Value = CE->getValue();
+      if ((Value & 1) || Value < MinVal || Value > MaxVal)
+        return true;
+    }
+    return false;
+  };
+
   // For consistency with the GNU assembler, treat immediates as offsets
   // from ".".
   if (auto *CE = dyn_cast<MCConstantExpr>(Expr)) {
-    int64_t Value = CE->getValue();
-    if ((Value & 1) || Value < MinVal || Value > MaxVal) {
+    if (isOutOfRangeConstant(CE)) {
       Error(StartLoc, "offset out of range");
       return MatchOperand_ParseFail;
     }
+    int64_t Value = CE->getValue();
     MCSymbol *Sym = Ctx.createTempSymbol();
-    Out.EmitLabel(Sym);
+    Out.emitLabel(Sym);
     const MCExpr *Base = MCSymbolRefExpr::create(Sym, MCSymbolRefExpr::VK_None,
                                                  Ctx);
     Expr = Value == 0 ? Base : MCBinaryExpr::createAdd(Base, Expr, Ctx);
   }
+
+  // For consistency with the GNU assembler, conservatively assume that a
+  // constant offset must by itself be within the given size range.
+  if (const auto *BE = dyn_cast<MCBinaryExpr>(Expr))
+    if (isOutOfRangeConstant(BE->getLHS()) ||
+        isOutOfRangeConstant(BE->getRHS())) {
+      Error(StartLoc, "offset out of range");
+      return MatchOperand_ParseFail;
+    }
 
   // Optionally match :tls_gdcall: or :tls_ldcall: followed by a TLS symbol.
   const MCExpr *Sym = nullptr;
@@ -1371,6 +1425,6 @@ SystemZAsmParser::parsePCRel(OperandVector &Operands, int64_t MinVal,
 }
 
 // Force static initialization.
-extern "C" void LLVMInitializeSystemZAsmParser() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeSystemZAsmParser() {
   RegisterMCAsmParser<SystemZAsmParser> X(getTheSystemZTarget());
 }

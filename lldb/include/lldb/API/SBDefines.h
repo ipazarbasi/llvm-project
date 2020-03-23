@@ -6,19 +6,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDB_SBDefines_h_
-#define LLDB_SBDefines_h_
-
+#ifndef LLDB_API_SBDEFINES_H
+#define LLDB_API_SBDEFINES_H
 
 #include "lldb/lldb-defines.h"
 #include "lldb/lldb-enumerations.h"
 #include "lldb/lldb-forward.h"
 #include "lldb/lldb-types.h"
 #include "lldb/lldb-versioning.h"
-
-#ifdef SWIG
-#define LLDB_API
-#endif
 
 // Forward Declarations
 namespace lldb {
@@ -45,6 +40,7 @@ class LLDB_API SBEvent;
 class LLDB_API SBEventList;
 class LLDB_API SBExecutionContext;
 class LLDB_API SBExpressionOptions;
+class LLDB_API SBFile;
 class LLDB_API SBFileSpec;
 class LLDB_API SBFileSpecList;
 class LLDB_API SBFrame;
@@ -102,4 +98,4 @@ typedef bool (*SBBreakpointHitCallback)(void *baton, SBProcess &process,
                                         lldb::SBBreakpointLocation &location);
 }
 
-#endif // LLDB_SBDefines_h_
+#endif // LLDB_API_SBDEFINES_H

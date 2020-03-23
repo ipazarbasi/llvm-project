@@ -93,7 +93,7 @@ private:
       GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::None);
     }
     if (Alignment)
-      GV->setAlignment(Alignment);
+      GV->setAlignment(llvm::Align(Alignment));
 
     return llvm::ConstantExpr::getGetElementPtr(ConstStr.getElementType(),
                                                 ConstStr.getPointer(), Zeros);
@@ -117,7 +117,7 @@ private:
 
   void emitDeviceStubBodyLegacy(CodeGenFunction &CGF, FunctionArgList &Args);
   void emitDeviceStubBodyNew(CodeGenFunction &CGF, FunctionArgList &Args);
-  std::string getDeviceSideName(const Decl *ND);
+  std::string getDeviceSideName(const NamedDecl *ND) override;
 
 public:
   CGNVCUDARuntime(CodeGenModule &CGM);
@@ -202,29 +202,30 @@ llvm::FunctionType *CGNVCUDARuntime::getRegisterLinkedBinaryFnTy() const {
   return llvm::FunctionType::get(VoidTy, Params, false);
 }
 
-std::string CGNVCUDARuntime::getDeviceSideName(const Decl *D) {
-  auto *ND = cast<const NamedDecl>(D);
+std::string CGNVCUDARuntime::getDeviceSideName(const NamedDecl *ND) {
+  GlobalDecl GD;
+  // D could be either a kernel or a variable.
+  if (auto *FD = dyn_cast<FunctionDecl>(ND))
+    GD = GlobalDecl(FD, KernelReferenceKind::Kernel);
+  else
+    GD = GlobalDecl(ND);
   std::string DeviceSideName;
   if (DeviceMC->shouldMangleDeclName(ND)) {
     SmallString<256> Buffer;
     llvm::raw_svector_ostream Out(Buffer);
-    DeviceMC->mangleName(ND, Out);
-    DeviceSideName = Out.str();
+    DeviceMC->mangleName(GD, Out);
+    DeviceSideName = std::string(Out.str());
   } else
-    DeviceSideName = ND->getIdentifier()->getName();
+    DeviceSideName = std::string(ND->getIdentifier()->getName());
   return DeviceSideName;
 }
 
 void CGNVCUDARuntime::emitDeviceStub(CodeGenFunction &CGF,
                                      FunctionArgList &Args) {
-  assert(getDeviceSideName(CGF.CurFuncDecl) == CGF.CurFn->getName() ||
-         getDeviceSideName(CGF.CurFuncDecl) + ".stub" == CGF.CurFn->getName() ||
-         CGF.CGM.getContext().getTargetInfo().getCXXABI() !=
-             CGF.CGM.getContext().getAuxTargetInfo()->getCXXABI());
-
   EmittedKernels.push_back({CGF.CurFn, CGF.CurFuncDecl});
   if (CudaFeatureEnabled(CGM.getTarget().getSDKVersion(),
-                         CudaFeature::CUDA_USES_NEW_LAUNCH))
+                         CudaFeature::CUDA_USES_NEW_LAUNCH) ||
+      CGF.getLangOpts().HIPUseNewLaunchAPI)
     emitDeviceStubBodyNew(CGF, Args);
   else
     emitDeviceStubBodyLegacy(CGF, Args);
@@ -252,14 +253,18 @@ void CGNVCUDARuntime::emitDeviceStubBodyNew(CodeGenFunction &CGF,
 
   llvm::BasicBlock *EndBlock = CGF.createBasicBlock("setup.end");
 
-  // Lookup cudaLaunchKernel function.
+  // Lookup cudaLaunchKernel/hipLaunchKernel function.
   // cudaError_t cudaLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
   //                              void **args, size_t sharedMem,
   //                              cudaStream_t stream);
+  // hipError_t hipLaunchKernel(const void *func, dim3 gridDim, dim3 blockDim,
+  //                            void **args, size_t sharedMem,
+  //                            hipStream_t stream);
   TranslationUnitDecl *TUDecl = CGM.getContext().getTranslationUnitDecl();
   DeclContext *DC = TranslationUnitDecl::castToDeclContext(TUDecl);
+  auto LaunchKernelName = addPrefixToName("LaunchKernel");
   IdentifierInfo &cudaLaunchKernelII =
-      CGM.getContext().Idents.get("cudaLaunchKernel");
+      CGM.getContext().Idents.get(LaunchKernelName);
   FunctionDecl *cudaLaunchKernelFD = nullptr;
   for (const auto &Result : DC->lookup(&cudaLaunchKernelII)) {
     if (FunctionDecl *FD = dyn_cast<FunctionDecl>(Result))
@@ -268,7 +273,7 @@ void CGNVCUDARuntime::emitDeviceStubBodyNew(CodeGenFunction &CGF,
 
   if (cudaLaunchKernelFD == nullptr) {
     CGM.Error(CGF.CurFuncDecl->getLocation(),
-              "Can't find declaration for cudaLaunchKernel()");
+              "Can't find declaration for " + LaunchKernelName);
     return;
   }
   // Create temporary dim3 grid_dim, block_dim.
@@ -289,7 +294,7 @@ void CGNVCUDARuntime::emitDeviceStubBodyNew(CodeGenFunction &CGF,
                                /*ShmemSize=*/ShmemSize.getType(),
                                /*Stream=*/Stream.getType()},
                               /*isVarArg=*/false),
-      "__cudaPopCallConfiguration");
+      addUnderscoredPrefixToName("PopCallConfiguration"));
 
   CGF.EmitRuntimeCallOrInvoke(cudaPopConfigFn,
                               {GridDim.getPointer(), BlockDim.getPointer(),
@@ -317,7 +322,7 @@ void CGNVCUDARuntime::emitDeviceStubBodyNew(CodeGenFunction &CGF,
   const CGFunctionInfo &FI =
       CGM.getTypes().arrangeFunctionDeclaration(cudaLaunchKernelFD);
   llvm::FunctionCallee cudaLaunchKernelFn =
-      CGM.CreateRuntimeFunction(FTy, "cudaLaunchKernel");
+      CGM.CreateRuntimeFunction(FTy, LaunchKernelName);
   CGF.EmitCall(FI, CGCallee::forDirect(cudaLaunchKernelFn), ReturnValueSlot(),
                LaunchKernelArgs);
   CGF.EmitBranch(EndBlock);
@@ -401,7 +406,8 @@ llvm::Function *CGNVCUDARuntime::makeRegisterGlobalsFn() {
   // each emitted kernel.
   llvm::Argument &GpuBinaryHandlePtr = *RegisterKernelsFunc->arg_begin();
   for (auto &&I : EmittedKernels) {
-    llvm::Constant *KernelName = makeConstantString(getDeviceSideName(I.D));
+    llvm::Constant *KernelName =
+        makeConstantString(getDeviceSideName(cast<NamedDecl>(I.D)));
     llvm::Constant *NullPtr = llvm::ConstantPointerNull::get(VoidPtrTy);
     llvm::Value *Args[] = {
         &GpuBinaryHandlePtr,
@@ -468,9 +474,13 @@ llvm::Function *CGNVCUDARuntime::makeRegisterGlobalsFn() {
 /// \endcode
 llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
   bool IsHIP = CGM.getLangOpts().HIP;
+  bool IsCUDA = CGM.getLangOpts().CUDA;
   // No need to generate ctors/dtors if there is no GPU binary.
   StringRef CudaGpuBinaryFileName = CGM.getCodeGenOpts().CudaGpuBinaryFileName;
   if (CudaGpuBinaryFileName.empty() && !IsHIP)
+    return nullptr;
+  if ((IsHIP || (IsCUDA && !RelocatableDeviceCode)) && EmittedKernels.empty() &&
+      DeviceVars.empty())
     return nullptr;
 
   // void __{cuda|hip}_register_globals(void* handle);
@@ -530,8 +540,8 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
     if (CudaGpuBinary) {
       // If fatbin is available from early finalization, create a string
       // literal containing the fat binary loaded from the given file.
-      FatBinStr = makeConstantString(CudaGpuBinary->getBuffer(), "",
-                                     FatbinConstantName, 8);
+      FatBinStr = makeConstantString(std::string(CudaGpuBinary->getBuffer()),
+                                     "", FatbinConstantName, 8);
     } else {
       // If fatbin is not available, create an external symbol
       // __hip_fatbin in section .hip_fatbin. The external symbol is supposed
@@ -565,7 +575,7 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
 
     // For CUDA, create a string literal containing the fat binary loaded from
     // the given file.
-    FatBinStr = makeConstantString(CudaGpuBinary->getBuffer(), "",
+    FatBinStr = makeConstantString(std::string(CudaGpuBinary->getBuffer()), "",
                                    FatbinConstantName, 8);
     FatMagic = CudaFatMagic;
   }
@@ -607,7 +617,7 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
         Linkage,
         /*Initializer=*/llvm::ConstantPointerNull::get(VoidPtrPtrTy),
         "__hip_gpubin_handle");
-    GpuBinaryHandle->setAlignment(CGM.getPointerAlign().getQuantity());
+    GpuBinaryHandle->setAlignment(CGM.getPointerAlign().getAsAlign());
     // Prevent the weak symbol in different shared libraries being merged.
     if (Linkage != llvm::GlobalValue::InternalLinkage)
       GpuBinaryHandle->setVisibility(llvm::GlobalValue::HiddenVisibility);
@@ -648,7 +658,7 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
     GpuBinaryHandle = new llvm::GlobalVariable(
         TheModule, VoidPtrPtrTy, false, llvm::GlobalValue::InternalLinkage,
         llvm::ConstantPointerNull::get(VoidPtrPtrTy), "__cuda_gpubin_handle");
-    GpuBinaryHandle->setAlignment(CGM.getPointerAlign().getQuantity());
+    GpuBinaryHandle->setAlignment(CGM.getPointerAlign().getAsAlign());
     CtorBuilder.CreateAlignedStore(RegisterFatbinCall, GpuBinaryHandle,
                                    CGM.getPointerAlign());
 
@@ -670,8 +680,8 @@ llvm::Function *CGNVCUDARuntime::makeModuleCtorFunction() {
     SmallString<64> ModuleID;
     llvm::raw_svector_ostream OS(ModuleID);
     OS << ModuleIDPrefix << llvm::format("%" PRIx64, FatbinWrapper->getGUID());
-    llvm::Constant *ModuleIDConstant =
-        makeConstantString(ModuleID.str(), "", ModuleIDSectionName, 32);
+    llvm::Constant *ModuleIDConstant = makeConstantString(
+        std::string(ModuleID.str()), "", ModuleIDSectionName, 32);
 
     // Create an alias for the FatbinWrapper that nvcc will look for.
     llvm::GlobalAlias::create(llvm::GlobalValue::ExternalLinkage,

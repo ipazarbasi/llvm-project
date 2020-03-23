@@ -142,7 +142,7 @@ static KeywordStatus getKeywordStatus(const LangOptions &LangOpts,
   // We treat bridge casts as objective-C keywords so we can warn on them
   // in non-arc mode.
   if (LangOpts.ObjC && (Flags & KEYOBJC)) return KS_Enabled;
-  if (LangOpts.ConceptsTS && (Flags & KEYCONCEPTS)) return KS_Enabled;
+  if (LangOpts.CPlusPlus2a && (Flags & KEYCONCEPTS)) return KS_Enabled;
   if (LangOpts.Coroutines && (Flags & KEYCOROUTINES)) return KS_Enabled;
   if (LangOpts.ModulesTS && (Flags & KEYMODULES)) return KS_Enabled;
   if (LangOpts.CPlusPlus && (Flags & KEYALLCXX)) return KS_Future;
@@ -218,7 +218,7 @@ void IdentifierTable::AddKeywords(const LangOptions &LangOpts) {
   if (LangOpts.DeclSpecKeyword)
     AddKeyword("__declspec", tok::kw___declspec, KEYALL, LangOpts, *this);
 
-  // Add the '_experimental_modules_import' contextual keyword.
+  // Add the 'import' contextual keyword.
   get("import").setModulesImport(true);
 }
 
@@ -412,6 +412,21 @@ public:
 
 } // namespace clang.
 
+bool Selector::isKeywordSelector(ArrayRef<StringRef> Names) const {
+  assert(!Names.empty() && "must have >= 1 selector slots");
+  if (getNumArgs() != Names.size())
+    return false;
+  for (unsigned I = 0, E = Names.size(); I != E; ++I) {
+    if (getNameForSlot(I) != Names[I])
+      return false;
+  }
+  return true;
+}
+
+bool Selector::isUnarySelector(StringRef Name) const {
+  return isUnarySelector() && getNameForSlot(0) == Name;
+}
+
 unsigned Selector::getNumArgs() const {
   unsigned IIF = getIdentifierInfoFlag();
   if (IIF <= ZeroArg)
@@ -448,7 +463,7 @@ std::string MultiKeywordSelector::getName() const {
     OS << ':';
   }
 
-  return OS.str();
+  return std::string(OS.str());
 }
 
 std::string Selector::getAsString() const {
@@ -461,7 +476,7 @@ std::string Selector::getAsString() const {
     if (getNumArgs() == 0) {
       assert(II && "If the number of arguments is 0 then II is guaranteed to "
                    "not be null.");
-      return II->getName();
+      return std::string(II->getName());
     }
 
     if (!II)

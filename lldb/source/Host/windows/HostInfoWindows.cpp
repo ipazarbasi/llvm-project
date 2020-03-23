@@ -1,4 +1,4 @@
-//===-- HostInfoWindows.cpp -------------------------------------*- C++ -*-===//
+//===-- HostInfoWindows.cpp -----------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -95,6 +95,8 @@ bool HostInfoWindows::GetHostname(std::string &s) {
   if (!::GetComputerNameW(buffer, &dwSize))
     return false;
 
+  // The conversion requires an empty string.
+  s.clear();
   return llvm::convertWideToUTF8(buffer, s);
 }
 

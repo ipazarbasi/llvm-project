@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLDBVSCODE_VSCODE_H_
-#define LLDBVSCODE_VSCODE_H_
+#ifndef LLDB_TOOLS_LLDB_VSCODE_VSCODE_H
+#define LLDB_TOOLS_LLDB_VSCODE_VSCODE_H
 
 #include <iosfwd>
 #include <map>
@@ -63,6 +63,8 @@ typedef llvm::DenseMap<uint32_t, SourceBreakpoint> SourceBreakpointMap;
 typedef llvm::StringMap<FunctionBreakpoint> FunctionBreakpointMap;
 enum class OutputType { Console, Stdout, Stderr, Telemetry };
 
+enum VSCodeBroadcasterBits { eBroadcastBitStopEventThread = 1u << 0 };
+
 struct VSCode {
   InputStream input;
   OutputStream output;
@@ -99,17 +101,13 @@ struct VSCode {
   int64_t GetLineForPC(int64_t sourceReference, lldb::addr_t pc) const;
   ExceptionBreakpoint *GetExceptionBreakpoint(const std::string &filter);
   ExceptionBreakpoint *GetExceptionBreakpoint(const lldb::break_id_t bp_id);
-  //----------------------------------------------------------------------
   // Send the JSON in "json_str" to the "out" stream. Correctly send the
   // "Content-Length:" field followed by the length, followed by the raw
   // JSON bytes.
-  //----------------------------------------------------------------------
   void SendJSON(const std::string &json_str);
 
-  //----------------------------------------------------------------------
   // Serialize the JSON value into a string and send the JSON packet to
   // the "out" stream.
-  //----------------------------------------------------------------------
   void SendJSON(const llvm::json::Value &json);
 
   std::string ReadJSON();
@@ -136,6 +134,24 @@ struct VSCode {
   void RunPreRunCommands();
   void RunStopCommands();
   void RunExitCommands();
+
+  /// Create a new SBTarget object from the given request arguments.
+  /// \param[in] arguments
+  ///     Launch configuration arguments.
+  ///
+  /// \param[out] error
+  ///     An SBError object that will contain an error description if
+  ///     function failed to create the target.
+  ///
+  /// \return
+  ///     An SBTarget object.
+  lldb::SBTarget CreateTargetFromArguments(
+      const llvm::json::Object &arguments,
+      lldb::SBError &error);
+
+  /// Set given target object as a current target for lldb-vscode and start
+  /// listeing for its breakpoint events.
+  void SetTarget(const lldb::SBTarget target);
 };
 
 extern VSCode g_vsc;

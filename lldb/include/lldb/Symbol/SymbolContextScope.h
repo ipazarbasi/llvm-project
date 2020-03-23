@@ -6,14 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef liblldb_SymbolContextScope_h_
-#define liblldb_SymbolContextScope_h_
+#ifndef LLDB_SYMBOL_SYMBOLCONTEXTSCOPE_H
+#define LLDB_SYMBOL_SYMBOLCONTEXTSCOPE_H
 
 #include "lldb/lldb-private.h"
 
 namespace lldb_private {
 
-//----------------------------------------------------------------------
 /// \class SymbolContextScope SymbolContextScope.h
 /// "lldb/Symbol/SymbolContextScope.h" Inherit from this if your object is
 /// part of a symbol context
@@ -62,12 +61,10 @@ namespace lldb_private {
 /// can also be created using a SymbolContextScope* and and object pairs that
 /// allow large collections of objects to be passed around with minimal
 /// overhead.
-//----------------------------------------------------------------------
 class SymbolContextScope {
 public:
   virtual ~SymbolContextScope() = default;
 
-  //------------------------------------------------------------------
   /// Reconstruct the object's symbol context into \a sc.
   ///
   /// The object should fill in as much of the SymbolContext as it can so
@@ -76,7 +73,6 @@ public:
   ///
   /// \param[out] sc
   ///     A symbol context object pointer that gets filled in.
-  //------------------------------------------------------------------
   virtual void CalculateSymbolContext(SymbolContext *sc) = 0;
 
   virtual lldb::ModuleSP CalculateSymbolContextModule() {
@@ -91,7 +87,6 @@ public:
 
   virtual Symbol *CalculateSymbolContextSymbol() { return nullptr; }
 
-  //------------------------------------------------------------------
   /// Dump the object's symbol context to the stream \a s.
   ///
   /// The object should dump its symbol context to the stream \a s. This
@@ -100,10 +95,9 @@ public:
   ///
   /// \param[in] s
   ///     The stream to which to dump the object's symbol context.
-  //------------------------------------------------------------------
   virtual void DumpSymbolContext(Stream *s) = 0;
 };
 
 } // namespace lldb_private
 
-#endif // liblldb_SymbolContextScope_h_
+#endif // LLDB_SYMBOL_SYMBOLCONTEXTSCOPE_H
