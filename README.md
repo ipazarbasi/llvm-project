@@ -1,3 +1,21 @@
+# My CMake invocation (as of 2020-04-12)
+
+    cmake -H/path/to/llvm-project/llvm -Bllvm-rel -DCMAKE_BUILD_TYPE=Release \
+    -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DLLVM_APPEND_VC_REV=OFF \
+    -DCMAKE_INSTALL_PREFIX=/path/to/install/prefix \
+    -DLLDB_USE_SYSTEM_SIX=ON -DPSTL_PARALLEL_BACKEND=tbb \
+    -DLIBCXX_ENABLE_PARALLEL_ALGORITHMS=ON -DLLVM_PARALLEL_COMPILE_JOBS=$(nproc) \
+    -DLLVM_PARALLEL_LINK_JOBS=5 -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
+    -DCLANG_INCLUDE_DOCS=OFF -DCLANG_TOOLS_EXTRA_INCLUDE_DOCS=OFF \
+    -DLIBCXX_INCLUDE_DOCS=OFF -DLLVM_INCLUDE_DOCS=OFF \
+    -DCLANG_DEFAULT_CXX_STDLIB=libc++ -DLIBCXX_CXX_ABI=libstdc++ \
+    -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;libcxx;libcxxabi;lldb;openmp;parallel-libs;pstl"
+      
+    cmake --build llvm-rel --config Release
+      
+    sudo cmake --build llvm-rel --config Release --target install
+
+
 # The LLVM Compiler Infrastructure
 
 This directory and its sub-directories contain source code for LLVM,
