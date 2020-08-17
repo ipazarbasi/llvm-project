@@ -1,4 +1,4 @@
-; RUN: opt < %s -gvn-sink -simplifycfg -simplifycfg-sink-common=false -S | FileCheck %s
+; RUN: opt < %s -gvn-sink -simplifycfg -hoist-common-insts=true -simplifycfg-sink-common=false -S | FileCheck %s
 
 define zeroext i1 @test1(i1 zeroext %flag, i32 %blksA, i32 %blksB, i32 %nblks) {
 entry:
@@ -695,8 +695,8 @@ if.end:
 
 ; CHECK-LABEL: @common_bitcast(
 ; CHECK: %. = select i1 %flag, float 2.000000e+00, float 1.000000e+00
-; CHECK: %a = bitcast i32* %x to float*
-; CHECK: store float %., float* %a
+; CHECK: %[[a1:.*]] = bitcast i32* %x to float*
+; CHECK: store float %., float* %[[a1]]
 define i32 @common_bitcast(i1 zeroext %flag, i32* %x) {
 entry:
   br i1 %flag, label %if.then, label %if.else
@@ -717,8 +717,8 @@ if.end:
 
 ; CHECK-LABEL: @common_addrspacecast(
 ; CHECK: %. = select i1 %flag, i32 9, i32 10
-; CHECK: %a = addrspacecast i32* %x to i32 addrspace(1)*
-; CHECK: store i32 %., i32 addrspace(1)* %a
+; CHECK: %[[a2:.*]] = addrspacecast i32* %x to i32 addrspace(1)*
+; CHECK: store i32 %., i32 addrspace(1)* %[[a2]]
 define i32 @common_addrspacecast(i1 zeroext %flag, i32* %x) {
 entry:
   br i1 %flag, label %if.then, label %if.else

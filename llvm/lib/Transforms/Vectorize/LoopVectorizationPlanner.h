@@ -31,9 +31,13 @@
 
 namespace llvm {
 
+class LoopVectorizationLegality;
+class LoopVectorizationCostModel;
+class PredicatedScalarEvolution;
+class VPRecipeBuilder;
+
 /// VPlan-based builder utility analogous to IRBuilder.
 class VPBuilder {
-private:
   VPBasicBlock *BB = nullptr;
   VPBasicBlock::iterator InsertPt = VPBasicBlock::iterator();
 
@@ -204,6 +208,8 @@ class LoopVectorizationPlanner {
   /// The interleaved access analysis.
   InterleavedAccessInfo &IAI;
 
+  PredicatedScalarEvolution &PSE;
+
   SmallVector<VPlanPtr, 4> VPlans;
 
   /// This class is used to enable the VPlan to invoke a method of ILV. This is
@@ -229,13 +235,14 @@ public:
                            const TargetTransformInfo *TTI,
                            LoopVectorizationLegality *Legal,
                            LoopVectorizationCostModel &CM,
-                           InterleavedAccessInfo &IAI)
-      : OrigLoop(L), LI(LI), TLI(TLI), TTI(TTI), Legal(Legal), CM(CM),
-        IAI(IAI) {}
+                           InterleavedAccessInfo &IAI,
+                           PredicatedScalarEvolution &PSE)
+      : OrigLoop(L), LI(LI), TLI(TLI), TTI(TTI), Legal(Legal), CM(CM), IAI(IAI),
+        PSE(PSE) {}
 
   /// Plan how to best vectorize, return the best VF and its cost, or None if
   /// vectorization and interleaving should be avoided up front.
-  Optional<VectorizationFactor> plan(unsigned UserVF);
+  Optional<VectorizationFactor> plan(unsigned UserVF, unsigned UserIC);
 
   /// Use the VPlan-native path to plan how to best vectorize, return the best
   /// VF and its cost.
@@ -288,6 +295,13 @@ private:
   /// according to the information gathered by Legal when it checked if it is
   /// legal to vectorize the loop. This method creates VPlans using VPRecipes.
   void buildVPlansWithVPRecipes(unsigned MinVF, unsigned MaxVF);
+
+  /// Adjust the recipes for any inloop reductions. The chain of instructions
+  /// leading from the loop exit instr to the phi need to be converted to
+  /// reductions, with one operand being vector and the other being the scalar
+  /// reduction chain.
+  void adjustRecipesForInLoopReductions(VPlanPtr &Plan,
+                                        VPRecipeBuilder &RecipeBuilder);
 };
 
 } // namespace llvm

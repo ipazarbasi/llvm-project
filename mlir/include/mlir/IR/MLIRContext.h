@@ -10,6 +10,7 @@
 #define MLIR_IR_MLIRCONTEXT_H
 
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/TypeID.h"
 #include <functional>
 #include <memory>
 #include <vector>
@@ -49,10 +50,56 @@ public:
     return static_cast<T *>(getRegisteredDialect(T::getDialectNamespace()));
   }
 
+  /// Get (or create) a dialect for the given derived dialect type. The derived
+  /// type must provide a static 'getDialectNamespace' method.
+  template <typename T>
+  T *getOrCreateDialect() {
+    return static_cast<T *>(getOrCreateDialect(
+        T::getDialectNamespace(), TypeID::get<T>(), [this]() {
+          std::unique_ptr<T> dialect(new T(this));
+          dialect->dialectID = TypeID::get<T>();
+          return dialect;
+        }));
+  }
+
+  /// Return true if we allow to create operation for unregistered dialects.
+  bool allowsUnregisteredDialects();
+
+  /// Enables creating operations in unregistered dialects.
+  void allowUnregisteredDialects(bool allow = true);
+
+  /// Return true if multi-threading is enabled by the context.
+  bool isMultithreadingEnabled();
+
+  /// Set the flag specifying if multi-threading is disabled by the context.
+  void disableMultithreading(bool disable = true);
+  void enableMultithreading(bool enable = true) {
+    disableMultithreading(!enable);
+  }
+
+  /// Return true if we should attach the operation to diagnostics emitted via
+  /// Operation::emit.
+  bool shouldPrintOpOnDiagnostic();
+
+  /// Set the flag specifying if we should attach the operation to diagnostics
+  /// emitted via Operation::emit.
+  void printOpOnDiagnostic(bool enable);
+
+  /// Return true if we should attach the current stacktrace to diagnostics when
+  /// emitted.
+  bool shouldPrintStackTraceOnDiagnostic();
+
+  /// Set the flag specifying if we should attach the current stacktrace when
+  /// emitting diagnostics.
+  void printStackTraceOnDiagnostic(bool enable);
+
   /// Return information about all registered operations.  This isn't very
   /// efficient: typically you should ask the operations about their properties
   /// directly.
   std::vector<AbstractOperation *> getRegisteredOperations();
+
+  /// Return true if this operation name is registered in this context.
+  bool isOperationRegistered(StringRef name);
 
   // This is effectively private given that only MLIRContext.cpp can see the
   // MLIRContextImpl type.
@@ -75,9 +122,25 @@ public:
 private:
   const std::unique_ptr<MLIRContextImpl> impl;
 
+  /// Get a dialect for the provided namespace and TypeID: abort the program if
+  /// a dialect exist for this namespace with different TypeID. Returns a
+  /// pointer to the dialect owned by the context.
+  Dialect *getOrCreateDialect(StringRef dialectNamespace, TypeID dialectID,
+                              function_ref<std::unique_ptr<Dialect>()> ctor);
+
   MLIRContext(const MLIRContext &) = delete;
   void operator=(const MLIRContext &) = delete;
 };
+
+//===----------------------------------------------------------------------===//
+// MLIRContext CommandLine Options
+//===----------------------------------------------------------------------===//
+
+/// Register a set of useful command-line options that can be used to configure
+/// various flags within the MLIRContext. These flags are used when constructing
+/// an MLIR context for initialization.
+void registerMLIRContextCLOptions();
+
 } // end namespace mlir
 
 #endif // MLIR_IR_MLIRCONTEXT_H

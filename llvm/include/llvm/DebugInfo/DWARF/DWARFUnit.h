@@ -70,10 +70,14 @@ class DWARFUnitHeader {
 
 public:
   /// Parse a unit header from \p debug_info starting at \p offset_ptr.
+  /// Note that \p SectionKind is used as a hint to guess the unit type
+  /// for DWARF formats prior to DWARFv5. In DWARFv5 the unit type is
+  /// explicitly defined in the header and the hint is ignored.
   bool extract(DWARFContext &Context, const DWARFDataExtractor &debug_info,
-               uint64_t *offset_ptr, DWARFSectionKind Kind = DW_SECT_INFO,
-               const DWARFUnitIndex *Index = nullptr,
-               const DWARFUnitIndex::Entry *Entry = nullptr);
+               uint64_t *offset_ptr, DWARFSectionKind SectionKind);
+  // For units in DWARF Package File, remember the index entry and update
+  // the abbreviation offset read by extract().
+  bool applyIndexEntry(const DWARFUnitIndex::Entry *Entry);
   uint64_t getOffset() const { return Offset; }
   const dwarf::FormParams &getFormParams() const { return FormParams; }
   uint16_t getVersion() const { return FormParams.Version; }
@@ -287,8 +291,10 @@ public:
     return Header.getDwarfOffsetByteSize();
   }
   uint64_t getLength() const { return Header.getLength(); }
+  dwarf::DwarfFormat getFormat() const { return Header.getFormat(); }
   uint8_t getUnitType() const { return Header.getUnitType(); }
   bool isTypeUnit() const { return Header.isTypeUnit(); }
+  uint64_t getAbbrOffset() const { return Header.getAbbrOffset(); }
   uint64_t getNextUnitOffset() const { return Header.getNextUnitOffset(); }
   const DWARFSection &getLineSection() const { return LineSection; }
   StringRef getStringSection() const { return StringSection; }
@@ -475,7 +481,6 @@ public:
   /// The unit needs to have its DIEs extracted for this method to work.
   DWARFDie getDIEForOffset(uint64_t Offset) {
     extractDIEsIfNeeded(false);
-    assert(!DieArray.empty());
     auto It =
         llvm::partition_point(DieArray, [=](const DWARFDebugInfoEntry &DIE) {
           return DIE.getOffset() < Offset;
@@ -487,7 +492,7 @@ public:
 
   uint32_t getLineTableOffset() const {
     if (auto IndexEntry = Header.getIndexEntry())
-      if (const auto *Contrib = IndexEntry->getOffset(DW_SECT_LINE))
+      if (const auto *Contrib = IndexEntry->getContribution(DW_SECT_LINE))
         return Contrib->Offset;
     return 0;
   }

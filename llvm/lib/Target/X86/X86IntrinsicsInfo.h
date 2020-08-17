@@ -417,12 +417,6 @@ static const IntrinsicData  IntrinsicsWithoutChain[] = {
   X86_INTRINSIC_DATA(avx2_psrlv_q_256, INTR_TYPE_2OP, X86ISD::VSRLV, 0),
   X86_INTRINSIC_DATA(avx512_add_pd_512, INTR_TYPE_2OP, ISD::FADD, X86ISD::FADD_RND),
   X86_INTRINSIC_DATA(avx512_add_ps_512, INTR_TYPE_2OP, ISD::FADD, X86ISD::FADD_RND),
-  X86_INTRINSIC_DATA(avx512_cmp_pd_128, CMP_MASK_CC, X86ISD::CMPM, 0),
-  X86_INTRINSIC_DATA(avx512_cmp_pd_256, CMP_MASK_CC, X86ISD::CMPM, 0),
-  X86_INTRINSIC_DATA(avx512_cmp_pd_512, CMP_MASK_CC, X86ISD::CMPM, X86ISD::CMPM_SAE),
-  X86_INTRINSIC_DATA(avx512_cmp_ps_128, CMP_MASK_CC, X86ISD::CMPM, 0),
-  X86_INTRINSIC_DATA(avx512_cmp_ps_256, CMP_MASK_CC, X86ISD::CMPM, 0),
-  X86_INTRINSIC_DATA(avx512_cmp_ps_512, CMP_MASK_CC, X86ISD::CMPM, X86ISD::CMPM_SAE),
   X86_INTRINSIC_DATA(avx512_conflict_d_128, INTR_TYPE_1OP, X86ISD::CONFLICT, 0),
   X86_INTRINSIC_DATA(avx512_conflict_d_256, INTR_TYPE_1OP, X86ISD::CONFLICT, 0),
   X86_INTRINSIC_DATA(avx512_conflict_d_512, INTR_TYPE_1OP, X86ISD::CONFLICT, 0),
@@ -464,6 +458,12 @@ static const IntrinsicData  IntrinsicsWithoutChain[] = {
                      X86ISD::FADDS, X86ISD::FADDS_RND),
   X86_INTRINSIC_DATA(avx512_mask_add_ss_round, INTR_TYPE_SCALAR_MASK,
                      X86ISD::FADDS, X86ISD::FADDS_RND),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_pd_128, CMP_MASK_CC, X86ISD::CMPMM, 0),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_pd_256, CMP_MASK_CC, X86ISD::CMPMM, 0),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_pd_512, CMP_MASK_CC, X86ISD::CMPMM, X86ISD::CMPMM_SAE),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_ps_128, CMP_MASK_CC, X86ISD::CMPMM, 0),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_ps_256, CMP_MASK_CC, X86ISD::CMPMM, 0),
+  X86_INTRINSIC_DATA(avx512_mask_cmp_ps_512, CMP_MASK_CC, X86ISD::CMPMM, X86ISD::CMPMM_SAE),
   X86_INTRINSIC_DATA(avx512_mask_cmp_sd,     CMP_MASK_SCALAR_CC,
                      X86ISD::FSETCCM, X86ISD::FSETCCM_SAE),
   X86_INTRINSIC_DATA(avx512_mask_cmp_ss,     CMP_MASK_SCALAR_CC,
@@ -993,11 +993,16 @@ static const IntrinsicData  IntrinsicsWithoutChain[] = {
   X86_INTRINSIC_DATA(bmi_bextr_64,         INTR_TYPE_2OP, X86ISD::BEXTR, 0),
   X86_INTRINSIC_DATA(bmi_bzhi_32,          INTR_TYPE_2OP, X86ISD::BZHI, 0),
   X86_INTRINSIC_DATA(bmi_bzhi_64,          INTR_TYPE_2OP, X86ISD::BZHI, 0),
+  X86_INTRINSIC_DATA(bmi_pdep_32,          INTR_TYPE_2OP, X86ISD::PDEP, 0),
+  X86_INTRINSIC_DATA(bmi_pdep_64,          INTR_TYPE_2OP, X86ISD::PDEP, 0),
+  X86_INTRINSIC_DATA(bmi_pext_32,          INTR_TYPE_2OP, X86ISD::PEXT, 0),
+  X86_INTRINSIC_DATA(bmi_pext_64,          INTR_TYPE_2OP, X86ISD::PEXT, 0),
   X86_INTRINSIC_DATA(fma_vfmaddsub_pd,     INTR_TYPE_3OP, X86ISD::FMADDSUB, 0),
   X86_INTRINSIC_DATA(fma_vfmaddsub_pd_256, INTR_TYPE_3OP, X86ISD::FMADDSUB, 0),
   X86_INTRINSIC_DATA(fma_vfmaddsub_ps,     INTR_TYPE_3OP, X86ISD::FMADDSUB, 0),
   X86_INTRINSIC_DATA(fma_vfmaddsub_ps_256, INTR_TYPE_3OP, X86ISD::FMADDSUB, 0),
   X86_INTRINSIC_DATA(sse_cmp_ps,        INTR_TYPE_3OP, X86ISD::CMPP, 0),
+  X86_INTRINSIC_DATA(sse_cmp_ss,        INTR_TYPE_3OP, X86ISD::FSETCC, 0),
   X86_INTRINSIC_DATA(sse_comieq_ss,     COMI, X86ISD::COMI, ISD::SETEQ),
   X86_INTRINSIC_DATA(sse_comige_ss,     COMI, X86ISD::COMI, ISD::SETGE),
   X86_INTRINSIC_DATA(sse_comigt_ss,     COMI, X86ISD::COMI, ISD::SETGT),
@@ -1022,6 +1027,7 @@ static const IntrinsicData  IntrinsicsWithoutChain[] = {
   X86_INTRINSIC_DATA(sse_ucomilt_ss,    COMI, X86ISD::UCOMI, ISD::SETLT),
   X86_INTRINSIC_DATA(sse_ucomineq_ss,   COMI, X86ISD::UCOMI, ISD::SETNE),
   X86_INTRINSIC_DATA(sse2_cmp_pd,       INTR_TYPE_3OP, X86ISD::CMPP, 0),
+  X86_INTRINSIC_DATA(sse2_cmp_sd,       INTR_TYPE_3OP, X86ISD::FSETCC, 0),
   X86_INTRINSIC_DATA(sse2_comieq_sd,    COMI, X86ISD::COMI, ISD::SETEQ),
   X86_INTRINSIC_DATA(sse2_comige_sd,    COMI, X86ISD::COMI, ISD::SETGE),
   X86_INTRINSIC_DATA(sse2_comigt_sd,    COMI, X86ISD::COMI, ISD::SETGT),
@@ -1155,10 +1161,8 @@ static const IntrinsicData* getIntrinsicWithoutChain(unsigned IntNo) {
 }
 
 static void verifyIntrinsicTables() {
-  assert(std::is_sorted(std::begin(IntrinsicsWithoutChain),
-                        std::end(IntrinsicsWithoutChain)) &&
-         std::is_sorted(std::begin(IntrinsicsWithChain),
-                        std::end(IntrinsicsWithChain)) &&
+  assert(llvm::is_sorted(IntrinsicsWithoutChain) &&
+         llvm::is_sorted(IntrinsicsWithChain) &&
          "Intrinsic data tables should be sorted by Intrinsic ID");
   assert((std::adjacent_find(std::begin(IntrinsicsWithoutChain),
                              std::end(IntrinsicsWithoutChain)) ==

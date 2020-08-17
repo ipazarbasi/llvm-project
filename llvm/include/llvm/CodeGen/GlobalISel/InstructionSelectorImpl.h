@@ -58,6 +58,11 @@ bool InstructionSelector::executeMatchTable(
   uint64_t CurrentIdx = 0;
   SmallVector<uint64_t, 4> OnFailResumeAt;
 
+  // Bypass the flag check on the instruction, and only look at the MCInstrDesc.
+  bool NoFPException = !State.MIs[0]->getDesc().mayRaiseFPException();
+
+  const uint16_t Flags = State.MIs[0]->getFlags();
+
   enum RejectAction { RejectAndGiveUp, RejectAndResume };
   auto handleReject = [&]() -> RejectAction {
     DEBUG_WITH_TYPE(TgtInstructionSelector::getName(),
@@ -69,6 +74,19 @@ bool InstructionSelector::executeMatchTable(
                     dbgs() << CurrentIdx << ": Resume at " << CurrentIdx << " ("
                            << OnFailResumeAt.size() << " try-blocks remain)\n");
     return RejectAndResume;
+  };
+
+  auto propagateFlags = [=](NewMIVector &OutMIs) {
+    for (auto MIB : OutMIs) {
+      // Set the NoFPExcept flag when no original matched instruction could
+      // raise an FP exception, but the new instruction potentially might.
+      uint16_t MIBFlags = Flags;
+      if (NoFPException && MIB->mayRaiseFPException())
+        MIBFlags |= MachineInstr::NoFPExcept;
+      MIB.setMIFlags(MIBFlags);
+    }
+
+    return true;
   };
 
   while (true) {
@@ -303,6 +321,35 @@ bool InstructionSelector::executeMatchTable(
           return false;
       break;
     }
+    case GIM_CheckIsBuildVectorAllOnes:
+    case GIM_CheckIsBuildVectorAllZeros: {
+      int64_t InsnID = MatchTable[CurrentIdx++];
+
+      DEBUG_WITH_TYPE(TgtInstructionSelector::getName(),
+                      dbgs() << CurrentIdx
+                             << ": GIM_CheckBuildVectorAll{Zeros|Ones}(MIs["
+                             << InsnID << "])\n");
+      assert(State.MIs[InsnID] != nullptr && "Used insn before defined");
+
+      const MachineInstr *MI = State.MIs[InsnID];
+      assert((MI->getOpcode() == TargetOpcode::G_BUILD_VECTOR ||
+              MI->getOpcode() == TargetOpcode::G_BUILD_VECTOR_TRUNC) &&
+             "Expected G_BUILD_VECTOR or G_BUILD_VECTOR_TRUNC");
+
+      if (MatcherOpcode == GIM_CheckIsBuildVectorAllOnes) {
+        if (!isBuildVectorAllOnes(*MI, MRI)) {
+          if (handleReject() == RejectAndGiveUp)
+            return false;
+        }
+      } else {
+        if (!isBuildVectorAllZeros(*MI, MRI)) {
+          if (handleReject() == RejectAndGiveUp)
+            return false;
+        }
+      }
+
+      break;
+    }
     case GIM_CheckCxxInsnPredicate: {
       int64_t InsnID = MatchTable[CurrentIdx++];
       int64_t Predicate = MatchTable[CurrentIdx++];
@@ -429,7 +476,7 @@ bool InstructionSelector::executeMatchTable(
                       dbgs() << CurrentIdx << ": GIM_CheckMemoryAlignment"
                       << "(MIs[" << InsnID << "]->memoperands() + " << MMOIdx
                       << ")->getAlignment() >= " << MinAlign << ")\n");
-      if (MMO->getAlignment() < MinAlign && handleReject() == RejectAndGiveUp)
+      if (MMO->getAlign() < MinAlign && handleReject() == RejectAndGiveUp)
         return false;
 
       break;
@@ -1065,6 +1112,7 @@ bool InstructionSelector::executeMatchTable(
     case GIR_Done:
       DEBUG_WITH_TYPE(TgtInstructionSelector::getName(),
                       dbgs() << CurrentIdx << ": GIR_Done\n");
+      propagateFlags(OutMIs);
       return true;
 
     default:

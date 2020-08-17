@@ -14,38 +14,25 @@
 #define LLVM_ANALYSIS_IVDESCRIPTORS_H
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/Optional.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/DemandedBits.h"
-#include "llvm/Analysis/EHPersonalities.h"
-#include "llvm/Analysis/MustExecute.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/Casting.h"
 
 namespace llvm {
 
-class AliasSet;
-class AliasSetTracker;
-class BasicBlock;
-class DataLayout;
+class DemandedBits;
+class AssumptionCache;
 class Loop;
-class LoopInfo;
-class OptimizationRemarkEmitter;
 class PredicatedScalarEvolution;
-class PredIteratorCache;
 class ScalarEvolution;
 class SCEV;
-class TargetLibraryInfo;
-class TargetTransformInfo;
+class DominatorTree;
+class ICFLoopSafetyInfo;
 
 /// The RecurrenceDescriptor is used to identify recurrences variables in a
 /// loop. Reduction is a special case of recurrence that has uses of the
@@ -232,6 +219,11 @@ public:
 
   /// Returns true if all source operands of the recurrence are SExtInsts.
   bool isSigned() { return IsSigned; }
+
+  /// Attempts to find a chain of operations from Phi to LoopExitInst that can
+  /// be treated as a set of reductions instructions for in-loop reductions.
+  SmallVector<Instruction *, 4> getReductionOpChain(PHINode *Phi,
+                                                    Loop *L) const;
 
 private:
   // The starting value of the recurrence.
